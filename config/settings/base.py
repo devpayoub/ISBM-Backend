@@ -178,6 +178,14 @@ CORS_ALLOWED_ORIGINS = [
 ]
 CORS_ALLOW_CREDENTIALS = True
 
+# Needed on top of CORS_ALLOWED_ORIGINS: Django's CSRF Origin check compares
+# the browser's Origin header against a scheme it derives from
+# SECURE_PROXY_SSL_HEADER, which can end up http vs https behind Render's
+# proxy. Explicitly trusting the origin here sidesteps that mismatch.
+CSRF_TRUSTED_ORIGINS = [
+    o.strip() for o in os.getenv("CSRF_TRUSTED_ORIGINS", "").split(",") if o.strip()
+]
+
 # Channels
 CHANNEL_LAYERS = {
     "default": {
