@@ -2,6 +2,7 @@ import os
 from pathlib import Path
 from datetime import timedelta
 from dotenv import load_dotenv
+import dj_database_url
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 load_dotenv(BASE_DIR / ".env")
@@ -77,17 +78,22 @@ TEMPLATES = [
     },
 ]
 
+# Render (and most PaaS providers) expose a single DATABASE_URL for their
+# managed Postgres — prefer that when set. Local Docker Compose has no
+# DATABASE_URL and instead sets the discrete DB_* vars, so fall back to
+# building the same URL from those (preserves the exact previous behavior).
+_local_db_url = "postgresql://{user}:{password}@{host}:{port}/{name}".format(
+    user=os.getenv("DB_USER", "isbm"),
+    password=os.getenv("DB_PASSWORD", "isbm"),
+    host=os.getenv("DB_HOST", "localhost"),
+    port=os.getenv("DB_PORT", "5432"),
+    name=os.getenv("DB_NAME", "isbm"),
+)
+
 DATABASES = {
-    "default": {
-        "ENGINE": "django.db.backends.postgresql",
-        "NAME": os.getenv("DB_NAME", "isbm"),
-        "USER": os.getenv("DB_USER", "isbm"),
-        "PASSWORD": os.getenv("DB_PASSWORD", "isbm"),
-        "HOST": os.getenv("DB_HOST", "localhost"),
-        "PORT": os.getenv("DB_PORT", "5432"),
-        "ATOMIC_REQUESTS": True,
-    }
+    "default": dj_database_url.config(default=_local_db_url, conn_max_age=600)
 }
+DATABASES["default"]["ATOMIC_REQUESTS"] = True
 
 AUTH_USER_MODEL = "accounts.CustomUser"
 

@@ -12,6 +12,7 @@ daphne==4.1.2
 
 # Database
 psycopg2-binary==2.9.10
+dj-database-url==2.3.0
 
 # Celery
 celery==5.4.0
