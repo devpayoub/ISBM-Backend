@@ -14,6 +14,9 @@ daphne==4.1.2
 psycopg2-binary==2.9.10
 dj-database-url==2.3.0
 
+# Static files (serves collectstatic output directly from Daphne on Render)
+whitenoise==6.8.2
+
 # Celery
 celery==5.4.0
 redis==5.2.0
