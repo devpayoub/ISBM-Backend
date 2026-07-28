@@ -1,9 +1,11 @@
 import logging
 
 from django.db import transaction
+from django.db.models.deletion import ProtectedError
 from django.utils.timezone import now
 from rest_framework import viewsets
 from rest_framework.decorators import action
+from rest_framework.exceptions import ValidationError
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
@@ -27,6 +29,15 @@ class MachineViewSet(viewsets.ModelViewSet):
     filterset_fields = ("type", "status", "is_active")
     search_fields = ("code", "name", "location")
     ordering_fields = ("code", "name", "status")
+
+    def destroy(self, request, *args, **kwargs):
+        try:
+            return super().destroy(request, *args, **kwargs)
+        except ProtectedError:
+            raise ValidationError(
+                "Impossible de supprimer cette machine : des alertes ou d'autres enregistrements y sont liés. "
+                "Désactivez-la plutôt (is_active)."
+            )
 
     @action(detail=True, methods=["patch"])
     def status(self, request, pk=None):

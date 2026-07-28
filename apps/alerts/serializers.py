@@ -23,6 +23,7 @@ class AlertCommentSerializer(serializers.ModelSerializer):
 
 class AlertSerializer(serializers.ModelSerializer):
     machine_detail = MachineSerializer(source="machine", read_only=True)
+    machine_name = serializers.CharField(source="machine.name", read_only=True, default="")
     category_detail = AlertCategorySerializer(source="category", read_only=True)
     reported_by_name = serializers.CharField(source="reported_by.full_name", read_only=True)
     acknowledged_by_name = serializers.CharField(source="acknowledged_by.full_name", read_only=True, default="")
@@ -33,7 +34,7 @@ class AlertSerializer(serializers.ModelSerializer):
         model = Alert
         fields = (
             "id",
-            "machine", "machine_detail",
+            "machine", "machine_detail", "machine_name",
             "category", "category_detail",
             "title", "description",
             "severity", "status",
@@ -58,6 +59,7 @@ class AlertSerializer(serializers.ModelSerializer):
 
 class AlertCreateSerializer(serializers.ModelSerializer):
     machine = serializers.PrimaryKeyRelatedField(queryset=Machine.objects.all())
+    title = serializers.CharField(required=False, allow_blank=True)
 
     class Meta:
         model = Alert

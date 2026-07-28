@@ -26,8 +26,14 @@ class ProductionBulkSerializer(serializers.Serializer):
 
     def create(self, validated):
         user = self.context["request"].user
-        objs = []
+        results = []
         for item in validated["entries"]:
-            obj = ProductionEntry(**item, recorded_by=user)
-            objs.append(obj)
-        return ProductionEntry.objects.bulk_create(objs, ignore_conflicts=False)
+            date = item.pop("date")
+            hour = item.pop("hour")
+            machine = item.pop("machine")
+            obj, _ = ProductionEntry.objects.update_or_create(
+                date=date, hour=hour, machine=machine,
+                defaults={**item, "recorded_by": user},
+            )
+            results.append(obj)
+        return results

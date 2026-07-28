@@ -3,7 +3,7 @@ from pathlib import Path
 from datetime import timedelta
 from dotenv import load_dotenv
 
-BASE_DIR = Path(__file__).resolve().parent.parent
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
 load_dotenv(BASE_DIR / ".env")
 
 SECRET_KEY = os.getenv("SECRET_KEY", "dev-insecure-key-change-me")
@@ -39,6 +39,8 @@ INSTALLED_APPS = [
     "apps.costs",
     "apps.planning",
     "apps.dashboard",
+    "apps.quality",
+    "apps.audit",
     "apps.common",
 ]
 
@@ -46,6 +48,7 @@ MIDDLEWARE = [
     "corsheaders.middleware.CorsMiddleware",
     "django.middleware.security.SecurityMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
+    "apps.common.slash.AppendSlashMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
@@ -123,6 +126,11 @@ REST_FRAMEWORK = {
     ),
     "DEFAULT_PAGINATION_CLASS": "apps.common.pagination.StandardPageNumberPagination",
     "PAGE_SIZE": 50,
+    # DRF defaults to serializing DecimalField as a string to avoid float
+    # precision loss over JSON. The frontend treats every numeric API field
+    # as a JS number (arithmetic, .toFixed()), so keep it consistent here
+    # instead of patching every consumer.
+    "COERCE_DECIMAL_TO_STRING": False,
     "DEFAULT_THROTTLE_CLASSES": (
         "rest_framework.throttling.UserRateThrottle",
         "rest_framework.throttling.AnonRateThrottle",

@@ -5,6 +5,7 @@ from django.db.models import Sum
 from django.utils import timezone
 from rest_framework import viewsets
 from rest_framework.decorators import action
+from rest_framework.exceptions import ValidationError
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
@@ -35,6 +36,21 @@ class CostParameterViewSet(viewsets.ModelViewSet):
     def active(self, request):
         rows = self.queryset.filter(is_active=True)
         return Response(CostParameterSerializer(rows, many=True).data)
+
+    def bulk_update(self, request):
+        """PUT on the collection: update ``value`` for a batch of parameters at once."""
+        if not isinstance(request.data, list):
+            raise ValidationError("Une liste de paramètres est attendue.")
+        by_id = {p.id: p for p in self.queryset.filter(id__in=[item.get("id") for item in request.data])}
+        updated = []
+        for item in request.data:
+            param = by_id.get(item.get("id"))
+            if param is None or "value" not in item:
+                continue
+            param.value = item["value"]
+            param.save(update_fields=["value"])
+            updated.append(param)
+        return Response(CostParameterSerializer(updated, many=True).data)
 
 
 class CostRecordViewSet(viewsets.ModelViewSet):

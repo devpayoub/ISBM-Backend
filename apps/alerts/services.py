@@ -42,6 +42,8 @@ def broadcast_alert_event(alert: Alert, event: str, extra: Optional[dict] = None
         "severity": alert.severity,
         "status": alert.status,
         "priority_score": alert.priority_score,
+        "worker_name": alert.worker_name,
+        "reported_by_name": alert.reported_by.full_name if alert.reported_by_id else None,
         "ts": timezone.now().isoformat(),
     }
     if extra:

@@ -6,7 +6,8 @@ from rest_framework.views import APIView
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenObtainPairView
 
-from apps.common.permissions import IsAdmin
+from apps.audit.services import log_activity
+from apps.common.permissions import IsAdmin, IsAdminOrManagerOrMaintenance
 
 from .models import CustomUser
 from .serializers import LoginSerializer, MeSerializer, RegisterSerializer, UserSerializer
@@ -14,6 +15,13 @@ from .serializers import LoginSerializer, MeSerializer, RegisterSerializer, User
 
 class LoginView(TokenObtainPairView):
     serializer_class = LoginSerializer
+
+    def post(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        user = serializer.user
+        log_activity(user, "auth.login", "CustomUser", user.pk, user.email)
+        return Response(serializer.validated_data, status=status.HTTP_200_OK)
 
 
 class LogoutView(APIView):
@@ -24,6 +32,7 @@ class LogoutView(APIView):
             RefreshToken(request.data.get("refresh"))
         except Exception:
             return Response(status=status.HTTP_400_BAD_REQUEST)
+        log_activity(request.user, "auth.logout", "CustomUser", request.user.pk, request.user.email)
         return Response(status=status.HTTP_205_RESET_CONTENT)
 
 
@@ -48,6 +57,11 @@ class UserViewSet(viewsets.ModelViewSet):
     permission_classes = (IsAuthenticated, IsAdmin)
     filterset_fields = ("role", "shift", "is_on_duty")
     search_fields = ("email", "first_name", "last_name", "phone")
+
+    def get_permissions(self):
+        if self.action in ("list", "retrieve"):
+            return [IsAuthenticated(), IsAdminOrManagerOrMaintenance()]
+        return [permission() for permission in self.permission_classes]
 
     @action(detail=False, methods=["post"], permission_classes=[IsAuthenticated, IsAdmin])
     def register(self, request):

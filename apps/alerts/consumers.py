@@ -2,7 +2,6 @@ from channels.db import database_sync_to_async
 from channels.generic.websocket import AsyncJsonWebsocketConsumer
 from django.contrib.auth import get_user_model
 
-User = get_user_model()
 
 
 class AlertConsumer(AsyncJsonWebsocketConsumer):
@@ -21,8 +20,8 @@ class AlertConsumer(AsyncJsonWebsocketConsumer):
             await self.close(code=4001)
             return
         self.user = user
-        await self.channel_layer.group_add(self.GROUP, self.channel_name)
         await self.accept()
+        await self.channel_layer.group_add(self.GROUP, self.channel_name)
         await self.send_json({"event": "socket.connected", "user": user.email})
 
     async def disconnect(self, code):
@@ -76,12 +75,11 @@ class AlertConsumer(AsyncJsonWebsocketConsumer):
     def _authenticate(self):
         from rest_framework_simplejwt.tokens import AccessToken
         from rest_framework_simplejwt.exceptions import InvalidToken, TokenError
+        from urllib.parse import parse_qs
 
         query = self.scope.get("query_string", b"").decode()
-        # query like "token=xxx" — best-effort tokenizer
-        token = None
-        if "=" in query:
-            token = query.split("=", 1)[1]
+        parsed = parse_qs(query)
+        token = parsed.get("token", [None])[0]
 
         if not token:
             token = next(
@@ -94,6 +92,7 @@ class AlertConsumer(AsyncJsonWebsocketConsumer):
             return None
         try:
             access = AccessToken(token)
+            User = get_user_model()
             return User.objects.filter(pk=access["user_id"]).first()
-        except (InvalidToken, TokenError):
+        except (InvalidToken, TokenError, Exception):
             return None

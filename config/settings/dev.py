@@ -3,6 +3,8 @@ from .base import *  # noqa
 DEBUG = True
 ALLOWED_HOSTS = ["*"]
 
+APPEND_SLASH = False
+
 # Render templates so dev console / DRF browsable API work.
 REST_FRAMEWORK["DEFAULT_RENDERER_CLASSES"] = (
     "rest_framework.renderers.JSONRenderer",

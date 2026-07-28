@@ -27,6 +27,12 @@ class IsAdminOrManager(BasePermission):
         return role in ("ADMIN", "MANAGER")
 
 
+class IsAdminOrManagerOrMaintenance(BasePermission):
+    def has_permission(self, request, view):
+        role = getattr(request.user, "role", None) if request.user else None
+        return role in ("ADMIN", "MANAGER", "MAINTENANCE")
+
+
 class IsAdminOrManagerOrReadOnly(BasePermission):
     def has_permission(self, request, view):
         if request.method in SAFE_METHODS:

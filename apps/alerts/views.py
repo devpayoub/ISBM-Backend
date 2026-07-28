@@ -2,6 +2,7 @@ from collections import Counter, defaultdict
 from datetime import timedelta
 
 from django.db.models import Count, F, Q
+from django.db.models.deletion import ProtectedError
 from django.db.models.functions import TruncDate
 from django.utils import timezone
 from rest_framework import status, viewsets
@@ -21,6 +22,7 @@ from .serializers import (
     AlertSerializer,
 )
 from .services import broadcast_alert_event, notify_alert_created, notify_escalation
+from apps.audit.services import log_activity
 
 
 # --------------------------------------------------------------------------
@@ -36,7 +38,7 @@ class AlertViewSet(viewsets.ModelViewSet):
 
     serializer_class = AlertSerializer
     permission_classes = (IsAuthenticated,)
-    filterset_fields = ("status", "severity", "machine", "category", "shift")
+    filterset_fields = ("status", "severity", "machine", "category", "shift", "reported_by")
     search_fields = ("title", "description", "worker_name")
     ordering_fields = ("created_at", "severity", "priority_score")
     ordering = ["-priority_score", "-created_at"]
@@ -50,15 +52,32 @@ class AlertViewSet(viewsets.ModelViewSet):
     # --- create -----------------------------------------------------------
     def perform_create(self, serializer):
         user = self.request.user
-        if user.role not in ("ADMIN", "MANAGER", "CONTROLLER", "MAINTENANCE"):
+        if user.role not in ("ADMIN", "MANAGER", "CONTROLLER"):
             raise PermissionDenied("Rôle insuffisant pour créer une alerte.")
         if not user.is_on_duty and user.role not in ("ADMIN", "MANAGER"):
             # Non-duty controllers/maintenance fall off alert creation except admins/managers.
             # Admins/managers always allowed; others require being on duty.
             pass
+        if user.role == "CONTROLLER":
+            # A controller can only declare problems on the machine they control.
+            if not user.machine_assignment_id:
+                raise ValidationError("Aucune machine n'est assignée à ce contrôleur.")
+            serializer.validated_data["machine"] = user.machine_assignment
+        if not serializer.validated_data.get("title"):
+            machine = serializer.validated_data["machine"]
+            category = serializer.validated_data.get("category")
+            serializer.validated_data["title"] = f"{category.name if category else 'Incident'} — {machine.code}"
         alert = serializer.save(reported_by=user)
         notify_alert_created(alert)
         broadcast_alert_event(alert, "alert.created")
+        log_activity(user, "alert.declared", "Alert", alert.pk, alert.title)
+
+        # Hand the problem off to maintenance: an open Intervention is what
+        # shows up in their queue. Skip it for categories explicitly marked
+        # as not requiring maintenance follow-up.
+        if alert.category_id is None or alert.category.requires_maintenance:
+            from apps.maintenance.models import Intervention
+            Intervention.objects.get_or_create(alert=alert)
 
     # --- actions ----------------------------------------------------------
     @action(detail=True, methods=["patch"], permission_classes=[IsAuthenticated])
@@ -75,12 +94,27 @@ class AlertViewSet(viewsets.ModelViewSet):
         _maybe_add_comment(alert, request, "Acquittée")
         broadcast_alert_event(alert, "alert.acknowledged",
                              extra={"acknowledged_by": request.user.full_name})
+        log_activity(request.user, "alert.acknowledged", "Alert", alert.pk, alert.title)
+        return Response(AlertSerializer(alert).data)
+
+    @action(detail=True, methods=["patch"], permission_classes=[IsAuthenticated])
+    def start(self, request, pk=None):
+        alert = self.get_object()
+        if request.user.role not in ("ADMIN", "MANAGER", "MAINTENANCE"):
+            raise PermissionDenied("Rôle insuffisant pour démarrer l'intervention.")
+        if alert.status != AlertStatus.ACKNOWLEDGED:
+            raise ValidationError("Démarrage non autorisé dans cet état.")
+        alert.status = AlertStatus.IN_PROGRESS
+        alert.save()
+        _maybe_add_comment(alert, request, "Intervention démarrée")
+        broadcast_alert_event(alert, "alert.started", extra={"started_by": request.user.full_name})
+        log_activity(request.user, "alert.started", "Alert", alert.pk, alert.title)
         return Response(AlertSerializer(alert).data)
 
     @action(detail=True, methods=["patch"], permission_classes=[IsAuthenticated])
     def resolve(self, request, pk=None):
         alert = self.get_object()
-        if request.user.role not in ("ADMIN", "MANAGER", "MAINTENANCE"):
+        if request.user.role not in ("ADMIN", "MANAGER"):
             raise PermissionDenied("Rôle insuffisant pour résoudre.")
         if not alert.can_resolve(request.user):
             raise ValidationError("Résolution non autorisée dans cet état.")
@@ -93,6 +127,7 @@ class AlertViewSet(viewsets.ModelViewSet):
         _maybe_add_comment(alert, request, request.data.get("comment", "Résolue"))
         broadcast_alert_event(alert, "alert.resolved",
                              extra={"resolved_by": request.user.full_name})
+        log_activity(request.user, "alert.resolved", "Alert", alert.pk, alert.title)
         return Response(AlertSerializer(alert).data)
 
     @action(detail=True, methods=["patch"], permission_classes=[IsAuthenticated, IsAdminOrManager])
@@ -104,6 +139,7 @@ class AlertViewSet(viewsets.ModelViewSet):
         alert.closed_at = timezone.now()
         alert.save()
         broadcast_alert_event(alert, "alert.closed")
+        log_activity(request.user, "alert.closed", "Alert", alert.pk, alert.title)
         return Response(AlertSerializer(alert).data)
 
     @action(detail=True, methods=["patch"], permission_classes=[IsAuthenticated])
@@ -205,6 +241,15 @@ class AlertCategoryViewSet(viewsets.ModelViewSet):
     permission_classes = (IsAuthenticated, IsAdminOrManagerOrReadOnly)
     filterset_fields = ("is_active", "requires_maintenance")
     search_fields = ("name", "code")
+
+    def destroy(self, request, *args, **kwargs):
+        try:
+            return super().destroy(request, *args, **kwargs)
+        except ProtectedError:
+            raise ValidationError(
+                "Impossible de supprimer cette catégorie : des alertes y sont liées. "
+                "Désactivez-la plutôt (is_active)."
+            )
 
 
 def _maybe_add_comment(alert, request, default_text):
