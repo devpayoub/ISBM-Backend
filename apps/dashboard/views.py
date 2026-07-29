@@ -2,6 +2,7 @@ from datetime import timedelta
 
 from django.db.models import Count, Sum
 from django.utils import timezone
+from drf_spectacular.utils import extend_schema
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -17,6 +18,7 @@ def _today():
     return timezone.now().date()
 
 
+@extend_schema(tags=["Dashboard"])
 class KPIsView(APIView):
     permission_classes = (IsAuthenticated,)
 
@@ -103,6 +105,7 @@ class KPIsView(APIView):
         })
 
 
+@extend_schema(tags=["Dashboard"])
 class MachinesStatusView(APIView):
     permission_classes = (IsAuthenticated,)
 
@@ -111,6 +114,7 @@ class MachinesStatusView(APIView):
         return Response(list(rows))
 
 
+@extend_schema(tags=["Dashboard"])
 class ParetoView(APIView):
     permission_classes = (IsAuthenticated,)
 
@@ -128,6 +132,7 @@ class ParetoView(APIView):
         return Response({"window_days": days, "rows": rows})
 
 
+@extend_schema(tags=["Dashboard"])
 class ShiftReportView(APIView):
     permission_classes = (IsAuthenticated,)
 

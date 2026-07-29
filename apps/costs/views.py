@@ -3,6 +3,7 @@ from decimal import Decimal
 
 from django.db.models import Sum
 from django.utils import timezone
+from drf_spectacular.utils import extend_schema
 from rest_framework import viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError
@@ -24,6 +25,7 @@ def _param(name: str) -> Decimal:
         return Decimal(0)
 
 
+@extend_schema(tags=["Costs"])
 class CostParameterViewSet(viewsets.ModelViewSet):
     queryset = CostParameter.objects.all()
     serializer_class = CostParameterSerializer
@@ -53,6 +55,7 @@ class CostParameterViewSet(viewsets.ModelViewSet):
         return Response(CostParameterSerializer(updated, many=True).data)
 
 
+@extend_schema(tags=["Costs"])
 class CostRecordViewSet(viewsets.ModelViewSet):
     queryset = CostRecord.objects.select_related("machine").all()
     serializer_class = CostRecordSerializer

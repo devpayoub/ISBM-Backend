@@ -1,5 +1,6 @@
 from django.db.models import Count
 from django.utils import timezone
+from drf_spectacular.utils import extend_schema
 from rest_framework import viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied, ValidationError
@@ -15,6 +16,7 @@ from .serializers import AuditDocumentSerializer, NonConformitySerializer
 CAN_MANAGE = IsAdminOrManager | IsController
 
 
+@extend_schema(tags=["Quality"])
 class NonConformityViewSet(viewsets.ModelViewSet):
     queryset = NonConformity.objects.select_related("machine", "opened_by")
     serializer_class = NonConformitySerializer
@@ -54,6 +56,7 @@ class NonConformityViewSet(viewsets.ModelViewSet):
         return Response(list(rows))
 
 
+@extend_schema(tags=["Quality"])
 class AuditDocumentViewSet(viewsets.ModelViewSet):
     queryset = AuditDocument.objects.select_related("uploaded_by")
     serializer_class = AuditDocumentSerializer

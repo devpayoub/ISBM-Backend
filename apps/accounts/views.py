@@ -1,3 +1,4 @@
+from drf_spectacular.utils import extend_schema
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
@@ -13,6 +14,7 @@ from .models import CustomUser
 from .serializers import LoginSerializer, MeSerializer, RegisterSerializer, UserSerializer
 
 
+@extend_schema(tags=["Auth"])
 class LoginView(TokenObtainPairView):
     serializer_class = LoginSerializer
 
@@ -24,6 +26,7 @@ class LoginView(TokenObtainPairView):
         return Response(serializer.validated_data, status=status.HTTP_200_OK)
 
 
+@extend_schema(tags=["Auth"])
 class LogoutView(APIView):
     permission_classes = (IsAuthenticated,)
 
@@ -36,6 +39,7 @@ class LogoutView(APIView):
         return Response(status=status.HTTP_205_RESET_CONTENT)
 
 
+@extend_schema(tags=["Auth"])
 class MeView(APIView):
     permission_classes = (IsAuthenticated,)
 
@@ -51,6 +55,7 @@ class MeView(APIView):
         return Response(MeSerializer(u).data)
 
 
+@extend_schema(tags=["Users"])
 class UserViewSet(viewsets.ModelViewSet):
     queryset = CustomUser.objects.all().order_by("last_name", "first_name")
     serializer_class = UserSerializer

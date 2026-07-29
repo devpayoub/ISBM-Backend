@@ -5,6 +5,7 @@ from django.db.models import Count, F, Q
 from django.db.models.deletion import ProtectedError
 from django.db.models.functions import TruncDate
 from django.utils import timezone
+from drf_spectacular.utils import extend_schema
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied, ValidationError
@@ -31,6 +32,7 @@ from apps.audit.services import log_activity
 CAN_CREATE = IsAdminOrManagerOrReadOnly  # already allows everyone read; creation gated in perform_create
 
 
+@extend_schema(tags=["Alerts"])
 class AlertViewSet(viewsets.ModelViewSet):
     queryset = Alert.objects.select_related(
         "machine", "category", "reported_by", "acknowledged_by", "resolved_by",
@@ -235,6 +237,7 @@ class AlertViewSet(viewsets.ModelViewSet):
         return Response({"window_days": days, "rows": out})
 
 
+@extend_schema(tags=["Alerts"])
 class AlertCategoryViewSet(viewsets.ModelViewSet):
     queryset = AlertCategory.objects.all()
     serializer_class = AlertCategorySerializer

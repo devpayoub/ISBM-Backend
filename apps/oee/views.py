@@ -4,6 +4,7 @@ from decimal import Decimal
 from django.db.models import Sum
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
+from drf_spectacular.utils import extend_schema
 from rest_framework import viewsets
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
@@ -24,6 +25,7 @@ def _shift_duration_param() -> Decimal:
         return Decimal(1440)
 
 
+@extend_schema(tags=["OEE"])
 class OEEViewSet(viewsets.ModelViewSet):
     queryset = OEERecord.objects.select_related("machine").all()
     serializer_class = OEERecordSerializer

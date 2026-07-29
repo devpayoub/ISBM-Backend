@@ -3,6 +3,7 @@ from datetime import timedelta
 
 from django.db.models import Avg, Count
 from django.utils import timezone
+from drf_spectacular.utils import extend_schema
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied, ValidationError
@@ -21,6 +22,7 @@ from .serializers import (
 )
 
 
+@extend_schema(tags=["Maintenance"])
 class InterventionViewSet(viewsets.ModelViewSet):
     queryset = Intervention.objects.select_related("alert", "technician")
     serializer_class = InterventionSerializer
@@ -112,6 +114,7 @@ class InterventionViewSet(viewsets.ModelViewSet):
         return Response({"window_days": days, "mttr_global_min": round(avg_all, 1), "rows": out})
 
 
+@extend_schema(tags=["Maintenance"])
 class PreventiveMaintenanceViewSet(viewsets.ModelViewSet):
     queryset = PreventiveMaintenance.objects.select_related("machine", "assigned_to")
     serializer_class = PreventiveMaintenanceSerializer

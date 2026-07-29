@@ -2,6 +2,7 @@ from datetime import timedelta
 
 from django.db.models import Sum
 from django.utils import timezone
+from drf_spectacular.utils import extend_schema
 from rest_framework import viewsets
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
@@ -13,6 +14,7 @@ from .models import ProductionPlan
 from .serializers import ProductionPlanSerializer
 
 
+@extend_schema(tags=["Planning"])
 class ProductionPlanViewSet(viewsets.ModelViewSet):
     queryset = ProductionPlan.objects.select_related("machine").all()
     serializer_class = ProductionPlanSerializer

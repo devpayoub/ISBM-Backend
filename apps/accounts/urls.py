@@ -1,8 +1,11 @@
 from django.urls import include, path
+from drf_spectacular.utils import extend_schema
 from rest_framework_simplejwt.views import TokenRefreshView
 
 from .views import LoginView, LogoutView, MeView, UserViewSet
 from rest_framework.routers import DefaultRouter
+
+TokenRefreshView = extend_schema(tags=["Auth"])(TokenRefreshView)
 
 router = DefaultRouter(trailing_slash=False)
 router.register("users", UserViewSet, basename="users")

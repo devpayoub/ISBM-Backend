@@ -3,6 +3,7 @@ import logging
 from django.db import transaction
 from django.db.models.deletion import ProtectedError
 from django.utils.timezone import now
+from drf_spectacular.utils import extend_schema
 from rest_framework import viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError
@@ -22,6 +23,7 @@ def _to_ws_type(event: str) -> str:
     return event.replace(".", "_")
 
 
+@extend_schema(tags=["Machines"])
 class MachineViewSet(viewsets.ModelViewSet):
     queryset = Machine.objects.all()
     serializer_class = MachineSerializer
@@ -67,6 +69,7 @@ class MachineViewSet(viewsets.ModelViewSet):
         return Response(ParameterSerializer(params, many=True).data)
 
 
+@extend_schema(tags=["Machines"])
 class ParameterViewSet(viewsets.ModelViewSet):
     queryset = Parameter.objects.all()
     serializer_class = ParameterSerializer

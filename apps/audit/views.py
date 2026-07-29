@@ -1,3 +1,4 @@
+from drf_spectacular.utils import extend_schema
 from rest_framework import viewsets
 from rest_framework.permissions import IsAuthenticated
 
@@ -7,6 +8,7 @@ from .models import ActivityLog
 from .serializers import ActivityLogSerializer
 
 
+@extend_schema(tags=["Audit"])
 class ActivityLogViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = ActivityLog.objects.select_related("user")
     serializer_class = ActivityLogSerializer

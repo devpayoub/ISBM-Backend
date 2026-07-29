@@ -3,6 +3,7 @@ from datetime import timedelta
 
 from django.db.models import Sum
 from django.utils import timezone
+from drf_spectacular.utils import extend_schema
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError
@@ -15,6 +16,7 @@ from .models import ProductionEntry
 from .serializers import ProductionBulkSerializer, ProductionEntrySerializer
 
 
+@extend_schema(tags=["Production"])
 class ProductionEntryViewSet(viewsets.ModelViewSet):
     queryset = ProductionEntry.objects.select_related("machine", "recorded_by")
     serializer_class = ProductionEntrySerializer
