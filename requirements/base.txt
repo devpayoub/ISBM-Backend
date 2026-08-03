@@ -17,6 +17,10 @@ dj-database-url==2.3.0
 # Static files (serves collectstatic output directly from Daphne on Render)
 whitenoise==6.8.2
 
+# Persistent media storage (S3-compatible, e.g. Cloudflare R2) — Render's
+# disk is ephemeral, so uploaded files need somewhere durable to live.
+django-storages[s3]==1.14.4
+
 # Celery
 celery==5.4.0
 redis==5.2.0

@@ -6,7 +6,7 @@ from django.db.models.deletion import ProtectedError
 from django.db.models.functions import TruncDate
 from django.utils import timezone
 from drf_spectacular.utils import extend_schema
-from rest_framework import status, viewsets
+from rest_framework import mixins, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.pagination import PageNumberPagination
@@ -22,7 +22,10 @@ from .serializers import (
     AlertCategorySerializer, AlertCommentSerializer, AlertCreateSerializer,
     AlertSerializer,
 )
-from .services import broadcast_alert_event, notify_alert_created, notify_escalation
+from .services import (
+    broadcast_alert_event, notify_alert_created, notify_escalation,
+    sync_machine_andon_status,
+)
 from apps.audit.services import log_activity
 
 
@@ -33,7 +36,15 @@ CAN_CREATE = IsAdminOrManagerOrReadOnly  # already allows everyone read; creatio
 
 
 @extend_schema(tags=["Alerts"])
-class AlertViewSet(viewsets.ModelViewSet):
+class AlertViewSet(
+    mixins.CreateModelMixin, mixins.RetrieveModelMixin, mixins.ListModelMixin,
+    viewsets.GenericViewSet,
+):
+    """Deliberately not a full ModelViewSet: every real mutation goes through
+    a dedicated, traceable @action below (acknowledge/start/resolve/close/...).
+    A generic PATCH/PUT/DELETE would let any authenticated role — including a
+    supplier — set fields like `status` directly with zero audit trail."""
+
     queryset = Alert.objects.select_related(
         "machine", "category", "reported_by", "acknowledged_by", "resolved_by",
     ).prefetch_related("comments")
@@ -73,6 +84,7 @@ class AlertViewSet(viewsets.ModelViewSet):
         notify_alert_created(alert)
         broadcast_alert_event(alert, "alert.created")
         log_activity(user, "alert.declared", "Alert", alert.pk, alert.title)
+        sync_machine_andon_status(alert.machine)
 
         # Hand the problem off to maintenance: an open Intervention is what
         # shows up in their queue. Skip it for categories explicitly marked
@@ -130,6 +142,7 @@ class AlertViewSet(viewsets.ModelViewSet):
         broadcast_alert_event(alert, "alert.resolved",
                              extra={"resolved_by": request.user.full_name})
         log_activity(request.user, "alert.resolved", "Alert", alert.pk, alert.title)
+        sync_machine_andon_status(alert.machine)
         return Response(AlertSerializer(alert).data)
 
     @action(detail=True, methods=["patch"], permission_classes=[IsAuthenticated, IsAdminOrManager])
@@ -142,6 +155,7 @@ class AlertViewSet(viewsets.ModelViewSet):
         alert.save()
         broadcast_alert_event(alert, "alert.closed")
         log_activity(request.user, "alert.closed", "Alert", alert.pk, alert.title)
+        sync_machine_andon_status(alert.machine)
         return Response(AlertSerializer(alert).data)
 
     @action(detail=True, methods=["patch"], permission_classes=[IsAuthenticated])

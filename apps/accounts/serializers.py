@@ -13,7 +13,7 @@ class UserSerializer(serializers.ModelSerializer):
         model = User
         fields = (
             "id", "email", "first_name", "last_name", "full_name",
-            "role", "shift", "phone", "machine_assignment",
+            "role", "shift", "phone", "machine_assignment", "assigned_machines",
             "is_on_duty", "is_staff", "is_active", "date_joined",
         )
         read_only_fields = ("id", "date_joined", "is_staff")
@@ -27,7 +27,7 @@ class RegisterSerializer(serializers.ModelSerializer):
         model = User
         fields = (
             "id", "email", "first_name", "last_name", "role",
-            "shift", "phone", "machine_assignment", "password", "password2",
+            "shift", "phone", "machine_assignment", "assigned_machines", "password", "password2",
         )
         read_only_fields = ("id",)
 
@@ -39,16 +39,19 @@ class RegisterSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         validated_data.pop("password2")
         password = validated_data.pop("password")
+        assigned_machines = validated_data.pop("assigned_machines", None)
         user = User(**validated_data)
         user.set_password(password)
         user.save()
+        if assigned_machines is not None:
+            user.assigned_machines.set(assigned_machines)
         return user
 
 
 class MeSerializer(UserSerializer):
     class Meta(UserSerializer.Meta):
         read_only_fields = UserSerializer.Meta.read_only_fields + (
-            "email", "role", "machine_assignment", "is_staff", "is_active",
+            "email", "role", "machine_assignment", "assigned_machines", "is_staff", "is_active",
         )
 
 

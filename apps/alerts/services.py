@@ -7,13 +7,13 @@ imported from views and Celery tasks so side-effects remain consistent.
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
 from typing import Optional
 
 from django.contrib.auth import get_user_model
 from django.utils import timezone
 
 from apps.common.channels_utils import broadcast_to_alerts_group
+from apps.common.notifications import NotificationContext, dispatch_notification
 
 from .models import Alert, AlertStatus
 
@@ -51,17 +51,37 @@ def broadcast_alert_event(alert: Alert, event: str, extra: Optional[dict] = None
     broadcast_to_alerts_group(payload)
 
 
+def sync_machine_andon_status(machine) -> None:
+    """The only place allowed to change Machine.status: a machine is always
+    RUNNING unless a CRITICAL alert is currently active on it, in which case
+    it's BREAKDOWN. Call this after any alert create/resolve/close so the
+    machine's status (and its derived Andon color) stays in lockstep with
+    its alerts instead of requiring a manual admin edit."""
+    from apps.machines.models import MachineStatus
+
+    has_active_critical = machine.alerts.filter(
+        severity="CRITICAL", status__in=[AlertStatus.OPEN, AlertStatus.ACKNOWLEDGED, AlertStatus.IN_PROGRESS],
+    ).exists()
+    target_status = MachineStatus.BREAKDOWN if has_active_critical else MachineStatus.RUNNING
+    if machine.status != target_status:
+        machine.status = target_status
+        machine.save(update_fields=["status", "updated_at"])
+
+    payload = {
+        "type": _ws_type("machine.status_changed"),
+        "event": "machine.status_changed",
+        "machine_id": machine.pk,
+        "machine_code": machine.code,
+        "new_status": machine.status,
+        "color": machine.get_andon_status(),
+        "ts": timezone.now().isoformat(),
+    }
+    broadcast_to_alerts_group(payload)
+
+
 # --------------------------------------------------------------------------
 # Notifications
 # --------------------------------------------------------------------------
-
-@dataclass
-class NotificationContext:
-    subject: str
-    recipients: list[str]
-    body: str
-    sms: str = ""
-
 
 def _maintenance_recipients(alert: Alert) -> list[str]:
     """Maintenance users on duty (fallback to all maintenance users)."""
@@ -111,26 +131,6 @@ def build_escalation_context(alert: Alert, level: int) -> NotificationContext:
     )
     sms = f"{label} {alert.machine.code} | {alert.title}"
     return NotificationContext(subject=subject, recipients=recipients, body=body, sms=sms)
-
-
-def dispatch_notification(ctx: NotificationContext, send_sms: bool = False) -> None:
-    """Email + optional SMS dispatch. Failures are logged but never raise."""
-    if not ctx.recipients:
-        logger.warning("Aucun destinataire pour la notification: %s", ctx.subject)
-        return
-
-    from django.core.mail import send_mail
-    try:
-        send_mail(ctx.subject, ctx.body, None, ctx.recipients, fail_silently=False)
-    except Exception as exc:
-        logger.error("Envoi e-mail échoué: %s", exc)
-
-    if send_sms:
-        try:
-            from apps.alerts.sms import send_sms as send_sms_fn
-            send_sms_fn(ctx.recipients, ctx.sms)
-        except Exception as exc:
-            logger.error("Envoi SMS échoué: %s", exc)
 
 
 def notify_alert_created(alert: Alert) -> None:

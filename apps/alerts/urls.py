@@ -17,10 +17,11 @@ urlpatterns = [
     path("active", AlertViewSet.as_view({"get": "active"}), name="alert-active"),
     path("pareto", AlertViewSet.as_view({"get": "pareto"}), name="alert-pareto"),
     path("stats", AlertViewSet.as_view({"get": "stats"}), name="alert-stats"),
-    path("<int:pk>", AlertViewSet.as_view({
-        "get": "retrieve", "put": "update", "patch": "partial_update",
-        "delete": "destroy"}),
-    ),
+    # No put/patch/delete here: AlertViewSet intentionally only supports
+    # retrieve — every real mutation goes through one of the named actions
+    # below (acknowledge/start/resolve/close/...), each independently
+    # role-gated and logged.
+    path("<int:pk>", AlertViewSet.as_view({"get": "retrieve"})),
     path("<int:pk>/acknowledge", AlertViewSet.as_view({"patch": "acknowledge"}), name="alert-acknowledge"),
     path("<int:pk>/start", AlertViewSet.as_view({"patch": "start"}), name="alert-start"),
     path("<int:pk>/resolve", AlertViewSet.as_view({"patch": "resolve"}), name="alert-resolve"),

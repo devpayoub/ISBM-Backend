@@ -14,6 +14,11 @@ class CustomUserAdmin(UserAdmin):
         (None, {"fields": ("email", "password")}),
         ("Personnel", {"fields": ("first_name", "last_name", "phone", "shift", "role")}),
         ("Atelier", {"fields": ("machine_assignment", "is_on_duty")}),
+        ("Fournisseur (SAV)", {
+            "fields": ("assigned_machines",),
+            "description": "Machines que ce fournisseur peut voir/traiter dans le module Support/SAV. "
+                            "Ne s'applique que si le rôle est \"Fournisseur\".",
+        }),
         ("Permissions", {"fields": ("is_active", "is_staff", "is_superuser", "groups", "user_permissions")}),
     )
     add_fieldsets = (
@@ -23,3 +28,4 @@ class CustomUserAdmin(UserAdmin):
         }),
     )
     readonly_fields = ("last_login", "date_joined")
+    filter_horizontal = ("assigned_machines", "groups", "user_permissions")

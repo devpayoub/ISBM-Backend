@@ -1,7 +1,7 @@
 from collections import defaultdict
-from datetime import timedelta
+from datetime import datetime, timedelta
 
-from django.db.models import Avg, Count
+from django.db.models import Avg, Count, Q
 from django.utils import timezone
 from drf_spectacular.utils import extend_schema
 from rest_framework import status, viewsets
@@ -11,7 +11,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from apps.alerts.models import AlertStatus
-from apps.alerts.services import broadcast_alert_event
+from apps.alerts.services import broadcast_alert_event, sync_machine_andon_status
 from apps.audit.services import log_activity
 from apps.common.permissions import IsAdmin, IsAdminOrManager, IsController, IsMaintenance
 
@@ -62,6 +62,7 @@ class InterventionViewSet(viewsets.ModelViewSet):
             alert.resolved_by = request.user
             alert.save()
             broadcast_alert_event(alert, "alert.resolved", extra={"resolved_by": request.user.full_name})
+            sync_machine_andon_status(alert.machine)
 
         log_activity(request.user, "intervention.finished", "Intervention", iv.pk, iv.action_taken)
         return Response(InterventionSerializer(iv).data)
@@ -92,6 +93,23 @@ class InterventionViewSet(viewsets.ModelViewSet):
         technician yet — whoever finishes it claims it in the same action.
         """
         rows = self.queryset.filter(finished_at__isnull=True)
+        return Response(InterventionSerializer(rows, many=True).data)
+
+    @action(detail=False, methods=["get"])
+    def by_day(self, request):
+        """Every intervention active on a given day — started that day OR
+        finished that day — whether still in progress or already terminée.
+        Unlike `queue`, finishing one doesn't make it disappear from here;
+        it's how maintenance sees everything they've handled for the day,
+        not just what's still outstanding."""
+        date_str = request.query_params.get("date")
+        try:
+            date_val = datetime.strptime(date_str, "%Y-%m-%d").date() if date_str else timezone.now().date()
+        except ValueError:
+            raise ValidationError("Date invalide, format attendu YYYY-MM-DD.")
+        rows = self.queryset.filter(
+            Q(started_at__date=date_val) | Q(finished_at__date=date_val)
+        )
         return Response(InterventionSerializer(rows, many=True).data)
 
     @action(detail=False, methods=["get"])

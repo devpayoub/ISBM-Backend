@@ -7,12 +7,13 @@ class InterventionSerializer(serializers.ModelSerializer):
     alert_title = serializers.CharField(source="alert.title", read_only=True, default="")
     machine_name = serializers.CharField(source="alert.machine.name", read_only=True, default="")
     technician_name = serializers.CharField(source="technician.full_name", read_only=True, default="")
+    reported_by_name = serializers.CharField(source="alert.reported_by.full_name", read_only=True, default="")
 
     class Meta:
         model = Intervention
         fields = (
             "id", "alert", "alert_title", "machine_name",
-            "technician", "technician_name",
+            "technician", "technician_name", "reported_by_name",
             "action_taken", "parts_used",
             "notes", "started_at", "finished_at", "duration_min", "verified",
         )

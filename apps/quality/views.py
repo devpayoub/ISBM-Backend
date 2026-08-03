@@ -35,6 +35,11 @@ class NonConformityViewSet(viewsets.ModelViewSet):
             raise PermissionDenied("Rôle insuffisant pour modifier une non-conformité.")
         serializer.save()
 
+    def perform_destroy(self, instance):
+        if self.request.user.role not in ("ADMIN", "MANAGER", "CONTROLLER"):
+            raise PermissionDenied("Rôle insuffisant pour supprimer une non-conformité.")
+        instance.delete()
+
     @action(detail=True, methods=["patch"], permission_classes=[IsAuthenticated, CAN_MANAGE])
     def close(self, request, pk=None):
         nc = self.get_object()

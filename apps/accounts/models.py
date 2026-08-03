@@ -8,6 +8,7 @@ class Role(models.TextChoices):
     CONTROLLER = "CONTROLLER", "Contrôleur"
     MAINTENANCE = "MAINTENANCE", "Maintenance"
     OPERATOR = "OPERATOR", "Opérateur"
+    SUPPLIER = "SUPPLIER", "Fournisseur"
 
 
 class Shift(models.TextChoices):
@@ -59,6 +60,14 @@ class CustomUser(AbstractUser):
         null=True, blank=True, related_name="operators",
     )
     is_on_duty = models.BooleanField(default=False)
+
+    # Used only for role=SUPPLIER: which machines this supplier services, for
+    # scoping their visibility into the SAV ticket module (a supplier may
+    # cover several machines, unlike machine_assignment above which is a
+    # single-machine link used for Controllers).
+    assigned_machines = models.ManyToManyField(
+        "machines.Machine", blank=True, related_name="assigned_suppliers",
+    )
 
     USERNAME_FIELD = "email"
     REQUIRED_FIELDS = ["first_name", "last_name"]

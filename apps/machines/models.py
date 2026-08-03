@@ -19,13 +19,15 @@ class Machine(models.Model):
     code = models.CharField(max_length=20, unique=True)
     name = models.CharField(max_length=120)
     type = models.CharField(max_length=20, choices=MachineType.choices, default=MachineType.ISBM)
-    status = models.CharField(max_length=20, choices=MachineStatus.choices, default=MachineStatus.STOPPED)
+    status = models.CharField(max_length=20, choices=MachineStatus.choices, default=MachineStatus.RUNNING)
 
     nominal_bph = models.PositiveIntegerField(default=0, help_text="Cadence nominale bouteilles/heure")
     nominal_cph = models.PositiveIntegerField(default=0, help_text="Cadence nominale bouchons/heure")
     cavities = models.PositiveIntegerField(default=6)
     product_format = models.CharField(max_length=50, blank=True, default="")
     location = models.CharField(max_length=120, blank=True, default="")
+    serial_number = models.CharField(max_length=100, blank=True, default="")
+    manufacturer = models.CharField(max_length=120, blank=True, default="")
 
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -38,6 +40,20 @@ class Machine(models.Model):
 
     def __str__(self) -> str:
         return f"{self.code} — {self.name}"
+
+    def get_andon_status(self) -> str:
+        """RUNNING/GREEN unless there's a reason to say otherwise: BREAKDOWN
+        (a CRITICAL alert is active) always reads RED; any other active alert
+        keeps the machine RUNNING but flags ORANGE. See
+        apps.alerts.services.sync_machine_andon_status, the single place
+        that's allowed to change `status` — it's driven entirely by alerts,
+        never set by hand."""
+        if self.status in (MachineStatus.STOPPED, MachineStatus.BREAKDOWN):
+            return "RED"
+        has_active_alert = self.alerts.filter(
+            status__in=["OPEN", "ACKNOWLEDGED", "IN_PROGRESS"]
+        ).exists()
+        return "ORANGE" if has_active_alert else "GREEN"
 
 
 class Parameter(models.Model):

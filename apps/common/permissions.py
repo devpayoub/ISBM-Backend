@@ -21,6 +21,11 @@ class IsController(BasePermission):
         return bool(request.user and getattr(request.user, "role", None) == "CONTROLLER")
 
 
+class IsSupplier(BasePermission):
+    def has_permission(self, request, view):
+        return bool(request.user and getattr(request.user, "role", None) == "SUPPLIER")
+
+
 class IsAdminOrManager(BasePermission):
     def has_permission(self, request, view):
         role = getattr(request.user, "role", None) if request.user else None

@@ -6,21 +6,29 @@ from django.utils import timezone
 from drf_spectacular.utils import extend_schema
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
-from rest_framework.exceptions import ValidationError
+from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
-from apps.common.permissions import IsAdminOrManagerOrReadOnly
-
 from .models import ProductionEntry
 from .serializers import ProductionBulkSerializer, ProductionEntrySerializer
+
+# The Saisie page is specifically for floor operators to log hourly
+# production; controllers can also log on behalf of their assigned machine.
+# Kept in sync with frontend/src/lib/auth/rbac.ts's declare/save checks for
+# this page.
+WRITER_ROLES = ("ADMIN", "MANAGER", "CONTROLLER", "OPERATOR")
 
 
 @extend_schema(tags=["Production"])
 class ProductionEntryViewSet(viewsets.ModelViewSet):
     queryset = ProductionEntry.objects.select_related("machine", "recorded_by")
     serializer_class = ProductionEntrySerializer
-    permission_classes = (IsAuthenticated, IsAdminOrManagerOrReadOnly)
+    # Read is open to any authenticated role (matches every other
+    # dashboard-data endpoint); writes are role-checked explicitly below
+    # rather than via the ADMIN/MANAGER-only IsAdminOrManagerOrReadOnly
+    # class, since operators/controllers are exactly who needs to write here.
+    permission_classes = (IsAuthenticated,)
     filterset_fields = ("date", "machine", "shift")
     search_fields = ("downtime_reason",)
     ordering_fields = ("date", "hour", "bottles_produced")
@@ -28,15 +36,27 @@ class ProductionEntryViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         user = self.request.user
-        if user.role not in ("ADMIN", "MANAGER", "CONTROLLER"):
+        if user.role not in WRITER_ROLES:
             raise ValidationError("Rôle insuffisant pour saisir la production.")
         try:
             serializer.save(recorded_by=user)
         except Exception as exc:
             raise ValidationError(f"Saisie invalide: {exc}")
 
+    def perform_update(self, serializer):
+        if self.request.user.role not in WRITER_ROLES:
+            raise PermissionDenied("Rôle insuffisant pour modifier la saisie.")
+        serializer.save()
+
+    def perform_destroy(self, instance):
+        if self.request.user.role not in WRITER_ROLES:
+            raise PermissionDenied("Rôle insuffisant pour supprimer la saisie.")
+        instance.delete()
+
     @action(detail=False, methods=["post"])
     def bulk(self, request):
+        if request.user.role not in WRITER_ROLES:
+            raise PermissionDenied("Rôle insuffisant pour saisir la production.")
         ser = ProductionBulkSerializer(data=request.data, context={"request": request})
         ser.is_valid(raise_exception=True)
         created = ser.save()

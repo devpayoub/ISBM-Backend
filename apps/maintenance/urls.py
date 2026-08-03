@@ -12,5 +12,6 @@ urlpatterns = [
     path("interventions/<int:pk>/finish", InterventionViewSet.as_view({"patch": "finish"}), name="intervention-finish"),
     path("my-tasks", InterventionViewSet.as_view({"get": "my_tasks"}), name="maintenance-my-tasks"),
     path("queue", InterventionViewSet.as_view({"get": "queue"}), name="maintenance-queue"),
+    path("by-day", InterventionViewSet.as_view({"get": "by_day"}), name="maintenance-by-day"),
     path("mttr", InterventionViewSet.as_view({"get": "mttr"}), name="maintenance-mttr"),
 ]
