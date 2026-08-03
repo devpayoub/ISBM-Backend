@@ -1,6 +1,5 @@
 from django.contrib import admin
 from django.urls import include, path
-from django.views.generic import TemplateView
 from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
 
 from .views import status_view
@@ -8,7 +7,6 @@ from .views import status_view
 urlpatterns = [
     path("admin/", admin.site.urls),
     path("", status_view, name="status"),
-    path("floor-screen/", TemplateView.as_view(template_name="floor_screen.html"), name="floor-screen"),
     path("api/v1/auth/", include("apps.accounts.urls")),
     path("api/v1/machines/", include("apps.machines.urls")),
     path("api/v1/alerts/", include("apps.alerts.urls")),
