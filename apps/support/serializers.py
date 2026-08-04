@@ -17,7 +17,7 @@ class TicketAttachmentSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = TicketAttachment
-        fields = ("id", "ticket", "file", "category", "uploaded_by", "uploaded_by_name", "uploaded_at")
+        fields = ("id", "ticket", "solution", "file", "category", "uploaded_by", "uploaded_by_name", "uploaded_at")
         read_only_fields = ("id", "ticket", "uploaded_by", "uploaded_by_name", "uploaded_at")
 
 
@@ -26,7 +26,7 @@ class TicketCommentSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = TicketComment
-        fields = ("id", "ticket", "user", "user_name", "text", "created_at")
+        fields = ("id", "ticket", "user", "user_name", "text", "request_type", "created_at")
         read_only_fields = ("id", "ticket", "user", "user_name", "created_at")
 
 
@@ -44,13 +44,14 @@ class TicketStatusLogSerializer(serializers.ModelSerializer):
 
 class SupplierSolutionSerializer(serializers.ModelSerializer):
     proposed_by_name = serializers.CharField(source="proposed_by.full_name", read_only=True, default="")
+    attachments = TicketAttachmentSerializer(many=True, read_only=True)
 
     class Meta:
         model = SupplierSolution
         fields = (
             "id", "ticket", "diagnostic", "probable_cause", "root_cause",
             "repair_procedure", "spare_parts", "estimated_duration_min", "urgency",
-            "proposed_by", "proposed_by_name", "proposed_at",
+            "proposed_by", "proposed_by_name", "proposed_at", "attachments",
         )
         read_only_fields = ("id", "ticket", "proposed_by", "proposed_by_name", "proposed_at")
 
@@ -61,8 +62,8 @@ class TicketClosureSerializer(serializers.ModelSerializer):
     class Meta:
         model = TicketClosure
         fields = (
-            "id", "ticket", "repair_conforms", "restarted_at", "total_downtime_min",
-            "intervention_duration_min", "parts_replaced", "intervention_cost",
+            "id", "ticket", "repair_conforms", "machine_back_in_service", "restarted_at",
+            "total_downtime_min", "intervention_duration_min", "parts_replaced", "intervention_cost",
             "closed_by", "closed_by_name", "closed_at",
         )
         read_only_fields = ("id", "ticket", "closed_by", "closed_by_name", "closed_at")
@@ -125,6 +126,7 @@ class TicketValidateSerializer(serializers.Serializer):
 
 class TicketCloseSerializer(serializers.Serializer):
     repair_conforms = serializers.BooleanField(default=True)
+    machine_back_in_service = serializers.BooleanField(default=True)
     restarted_at = serializers.DateTimeField(required=False)
     intervention_duration_min = serializers.IntegerField(required=False)
     parts_replaced = serializers.CharField(required=False, allow_blank=True)

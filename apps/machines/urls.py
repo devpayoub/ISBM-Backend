@@ -1,5 +1,8 @@
 from rest_framework.routers import DefaultRouter
 
+from apps.common.permissions import IsSupplier
+from rest_framework.permissions import IsAuthenticated
+
 from .views import MachineViewSet, ParameterViewSet
 
 router = DefaultRouter(trailing_slash=False)
@@ -17,6 +20,11 @@ urlpatterns = [
         "get": "list",
         "post": "create",
     })),
+    # `.as_view()` is called directly here (no router), so an `@action`'s
+    # `permission_classes` kwarg is never applied automatically — a router
+    # is what normally merges it into initkwargs. Pass it explicitly instead.
+    path("mine", MachineViewSet.as_view({"get": "mine"}, permission_classes=[IsAuthenticated, IsSupplier]),
+         name="machine-mine"),
     path("<int:pk>", MachineViewSet.as_view({
         "get": "retrieve",
         "put": "update",

@@ -34,15 +34,22 @@ def _supplier_users(ticket: Ticket):
     return User.objects.filter(pk=ticket.assigned_supplier_id, is_active=True)
 
 
+def _emails(users) -> list[str]:
+    return [u.email for u in users if u.email]
+
+
 def _supplier_recipients(ticket: Ticket) -> list[str]:
-    return [u.email for u in _supplier_users(ticket) if u.email]
+    return _emails(_supplier_users(ticket))
+
+
+def _internal_users(ticket: Ticket) -> list:
+    roles = ("ADMIN", "MANAGER", "MAINTENANCE")
+    on_duty = list(User.objects.filter(role__in=roles, is_active=True, is_on_duty=True))
+    return on_duty or list(User.objects.filter(role__in=roles, is_active=True))
 
 
 def _internal_recipients(ticket: Ticket) -> list[str]:
-    roles = ("ADMIN", "MANAGER", "MAINTENANCE")
-    on_duty = User.objects.filter(role__in=roles, is_active=True, is_on_duty=True)
-    users = on_duty or User.objects.filter(role__in=roles, is_active=True)
-    return [u.email for u in users if u.email]
+    return _emails(_internal_users(ticket))
 
 
 # --------------------------------------------------------------------------
@@ -92,13 +99,19 @@ def _ticket_summary(ticket: Ticket) -> str:
     )
 
 
+def _ticket_ctx_kwargs(ticket: Ticket) -> dict:
+    return dict(target_type="Ticket", target_id=ticket.pk, url=f"/support/{ticket.pk}")
+
+
 def notify_ticket_created(ticket: Ticket) -> None:
     """Internal-only: a new ticket needs triage before it's routed to a
     supplier (see notify_ticket_assigned for the supplier-facing version)."""
+    users = _internal_users(ticket)
     ctx = NotificationContext(
         subject=f"[SAV {ticket.ticket_number}] Nouveau ticket — {ticket.machine.code}",
-        recipients=_internal_recipients(ticket),
+        recipients=_emails(users),
         body=f"Nouveau ticket de support créé.\n\n{_ticket_summary(ticket)}",
+        recipient_users=users, **_ticket_ctx_kwargs(ticket),
     )
     dispatch_notification(ctx)
 
@@ -106,10 +119,12 @@ def notify_ticket_created(ticket: Ticket) -> None:
 def notify_ticket_assigned(ticket: Ticket) -> None:
     """Fired when a ticket moves NEW -> AWAITING_SUPPLIER: this is the
     supplier's "new ticket created" notification per the spec."""
+    users = list(_supplier_users(ticket))
     ctx = NotificationContext(
         subject=f"[SAV {ticket.ticket_number}] Nouveau ticket assigné — {ticket.machine.code}",
-        recipients=_supplier_recipients(ticket),
+        recipients=_emails(users),
         body=f"Un ticket vous a été assigné.\n\n{_ticket_summary(ticket)}",
+        recipient_users=users, **_ticket_ctx_kwargs(ticket),
     )
     dispatch_notification(ctx)
 
@@ -117,10 +132,12 @@ def notify_ticket_assigned(ticket: Ticket) -> None:
 def notify_diagnostic_available(ticket: Ticket) -> None:
     """Fired when the supplier starts diagnosis — spec's usine-side
     "Diagnostic disponible" notification."""
+    users = _internal_users(ticket)
     ctx = NotificationContext(
         subject=f"[SAV {ticket.ticket_number}] Diagnostic disponible",
-        recipients=_internal_recipients(ticket),
+        recipients=_emails(users),
         body=f"Le fournisseur a démarré le diagnostic.\n\n{_ticket_summary(ticket)}",
+        recipient_users=users, **_ticket_ctx_kwargs(ticket),
     )
     dispatch_notification(ctx)
 
@@ -129,54 +146,66 @@ def notify_new_media(ticket: Ticket, uploaded_by_supplier: bool) -> None:
     """Notify whichever side didn't upload the file — spec's "Ajout d'un
     nouveau média" notification (fournisseur side) and its usine-side
     mirror."""
+    users = _internal_users(ticket) if uploaded_by_supplier else list(_supplier_users(ticket))
     ctx = NotificationContext(
         subject=f"[SAV {ticket.ticket_number}] Nouveau média ajouté",
-        recipients=_internal_recipients(ticket) if uploaded_by_supplier else _supplier_recipients(ticket),
+        recipients=_emails(users),
         body=f"Un nouveau fichier a été ajouté au ticket.\n\n{_ticket_summary(ticket)}",
+        recipient_users=users, **_ticket_ctx_kwargs(ticket),
     )
     dispatch_notification(ctx)
 
 
 def notify_solution_proposed(ticket: Ticket) -> None:
+    users = _internal_users(ticket)
     ctx = NotificationContext(
         subject=f"[SAV {ticket.ticket_number}] Solution proposée par le fournisseur",
-        recipients=_internal_recipients(ticket),
+        recipients=_emails(users),
         body=f"Le fournisseur a proposé une solution.\n\n{_ticket_summary(ticket)}",
+        recipient_users=users, **_ticket_ctx_kwargs(ticket),
     )
     dispatch_notification(ctx)
 
 
 def notify_validation_decision(ticket: Ticket, decision: str, reason: str = "") -> None:
+    users = list(_supplier_users(ticket))
     ctx = NotificationContext(
         subject=f"[SAV {ticket.ticket_number}] Décision usine : {decision}",
-        recipients=_supplier_recipients(ticket),
+        recipients=_emails(users),
         body=f"Décision de l'usine : {decision}\nMotif : {reason or '—'}\n\n{_ticket_summary(ticket)}",
+        recipient_users=users, **_ticket_ctx_kwargs(ticket),
     )
     dispatch_notification(ctx)
 
 
 def notify_ticket_comment(ticket: Ticket) -> None:
+    users = list(_supplier_users(ticket)) + _internal_users(ticket)
     ctx = NotificationContext(
         subject=f"[SAV {ticket.ticket_number}] Nouveau commentaire",
-        recipients=_supplier_recipients(ticket) + _internal_recipients(ticket),
+        recipients=_emails(users),
         body=f"Un nouveau commentaire a été ajouté.\n\n{_ticket_summary(ticket)}",
+        recipient_users=users, **_ticket_ctx_kwargs(ticket),
     )
     dispatch_notification(ctx)
 
 
 def notify_ticket_resolved(ticket: Ticket) -> None:
+    users = list(_supplier_users(ticket)) + _internal_users(ticket)
     ctx = NotificationContext(
         subject=f"[SAV {ticket.ticket_number}] Ticket résolu",
-        recipients=_supplier_recipients(ticket) + _internal_recipients(ticket),
+        recipients=_emails(users),
         body=f"Le ticket a été marqué résolu.\n\n{_ticket_summary(ticket)}",
+        recipient_users=users, **_ticket_ctx_kwargs(ticket),
     )
     dispatch_notification(ctx)
 
 
 def notify_awaiting_supplier_reminder(ticket: Ticket) -> None:
+    users = list(_supplier_users(ticket))
     ctx = NotificationContext(
         subject=f"[SAV {ticket.ticket_number}] RAPPEL — en attente du fournisseur",
-        recipients=_supplier_recipients(ticket),
+        recipients=_emails(users),
+        recipient_users=users, **_ticket_ctx_kwargs(ticket),
         body=(
             f"Ce ticket attend toujours une réponse du fournisseur.\n\n"
             f"{_ticket_summary(ticket)}"

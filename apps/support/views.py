@@ -16,8 +16,8 @@ from apps.common.permissions import IsAdminOrManagerOrMaintenance, IsSupplier
 
 from .exports import export_tickets_excel, export_tickets_pdf
 from .models import (
-    SupplierSolution, Ticket, TicketAttachment, TicketClosure, TicketComment,
-    TicketStatus, TicketStatusLog,
+    CommentRequestType, SupplierSolution, Ticket, TicketAttachment, TicketClosure,
+    TicketComment, TicketStatus, TicketStatusLog,
 )
 from .serializers import (
     SupplierSolutionSerializer, TicketAttachmentSerializer, TicketCloseSerializer,
@@ -176,6 +176,7 @@ class TicketViewSet(
         TicketClosure.objects.create(
             ticket=ticket,
             repair_conforms=data.get("repair_conforms", True),
+            machine_back_in_service=data.get("machine_back_in_service", True),
             restarted_at=restarted_at,
             total_downtime_min=max(total_downtime_min, 0),
             intervention_duration_min=data.get("intervention_duration_min"),
@@ -199,7 +200,12 @@ class TicketViewSet(
         text = (request.data.get("text") or "").strip()
         if not text:
             raise ValidationError("Commentaire vide.")
-        comment = TicketComment.objects.create(ticket=ticket, user=request.user, text=text)
+        request_type = request.data.get("request_type") or ""
+        if request_type and request_type not in CommentRequestType.values:
+            raise ValidationError("Type de demande invalide.")
+        comment = TicketComment.objects.create(
+            ticket=ticket, user=request.user, text=text, request_type=request_type,
+        )
         notify_ticket_comment(ticket)
         broadcast_ticket_event(ticket, "ticket.commented", {"comment_id": comment.pk})
         return Response(TicketCommentSerializer(comment).data, status=status.HTTP_201_CREATED)
@@ -211,8 +217,16 @@ class TicketViewSet(
         file_obj = request.FILES.get("file")
         if not file_obj:
             raise ValidationError("Aucun fichier fourni.")
+        solution = None
+        solution_id = request.data.get("solution")
+        if solution_id:
+            # Must belong to this same ticket — otherwise a caller could tag
+            # a file onto an unrelated ticket's solution.
+            solution = ticket.solutions.filter(pk=solution_id).first()
+            if not solution:
+                raise ValidationError("Solution introuvable pour ce ticket.")
         attachment = TicketAttachment.objects.create(
-            ticket=ticket, file=file_obj,
+            ticket=ticket, solution=solution, file=file_obj,
             category=request.data.get("category", "PHOTO"),
             uploaded_by=request.user,
         )
@@ -310,6 +324,23 @@ class SupportKPIsView(APIView):
         ]
         avg_resolution_min = round(sum(res_deltas) / len(res_deltas), 1) if res_deltas else None
 
+        # Flat, one-row-per-closed-ticket list — unlike by_machine/by_supplier
+        # above (grouped aggregates), this is the spec's "historique des
+        # interventions" / "pièces remplacées" report: every closure in the
+        # window, so nothing needs cross-referencing individual tickets.
+        interventions = [
+            {
+                "ticket_number": t.ticket_number,
+                "machine_code": t.machine.code,
+                "supplier_name": t.assigned_supplier.full_name if t.assigned_supplier_id else None,
+                "closed_at": t.closure.closed_at,
+                "total_downtime_min": t.closure.total_downtime_min,
+                "parts_replaced": t.closure.parts_replaced,
+                "intervention_cost": t.closure.intervention_cost,
+            }
+            for t in closed.select_related("machine", "assigned_supplier", "closure").order_by("-closure__closed_at")
+        ]
+
         return Response({
             "window_days": days,
             "ticket_count": closed.count(),
@@ -319,4 +350,5 @@ class SupportKPIsView(APIView):
             "total_intervention_cost": round(cost_agg["total_cost"], 2) if cost_agg["total_cost"] is not None else None,
             "by_machine": by_machine,
             "by_supplier": by_supplier,
+            "interventions": interventions,
         })

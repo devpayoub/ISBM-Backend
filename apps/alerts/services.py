@@ -83,20 +83,32 @@ def sync_machine_andon_status(machine) -> None:
 # Notifications
 # --------------------------------------------------------------------------
 
-def _maintenance_recipients(alert: Alert) -> list[str]:
+def _maintenance_users(alert: Alert) -> list:
     """Maintenance users on duty (fallback to all maintenance users)."""
     ms = User.objects.filter(role="MAINTENANCE", is_active=True)
     on_duty = ms.filter(is_on_duty=True)
-    users = on_duty or ms
+    return list(on_duty or ms)
+
+
+def _controller_users(alert: Alert) -> list:
+    """The controller(s) assigned to this alert's machine — not every
+    controller system-wide, just whoever actually owns this machine."""
+    return list(User.objects.filter(role="CONTROLLER", is_active=True, machine_assignment=alert.machine))
+
+
+def _alert_notification_users(alert: Alert) -> list:
+    """Alert notifications (creation + escalation) are for MAINTENANCE and
+    the machine's CONTROLLER only — no other role gets one, in-app or
+    email, per explicit product decision."""
+    return _maintenance_users(alert) + _controller_users(alert)
+
+
+def _emails(users) -> list[str]:
     return [u.email for u in users if u.email]
 
 
-def _manager_recipients() -> list[str]:
-    return [u.email for u in User.objects.filter(role="MANAGER", is_active=True, is_on_duty=True, email__isnull=False)] or \
-           [u.email for u in User.objects.filter(role="MANAGER", is_active=True, email__isnull=False)]
-
-
 def build_creation_context(alert: Alert) -> NotificationContext:
+    users = _alert_notification_users(alert)
     subject = f"[ALERTE {alert.severity}] {alert.title} — {alert.machine.code}"
     body = (
         f"Machine     : {alert.machine.code} — {alert.machine.name}\n"
@@ -108,15 +120,17 @@ def build_creation_context(alert: Alert) -> NotificationContext:
         f"Référence   : alerte #{alert.pk}\n"
     )
     sms = f"ALERTE {alert.severity} | {alert.machine.code} | {alert.title}"
-    return NotificationContext(subject=subject, recipients=_maintenance_recipients(alert), body=body, sms=sms)
+    return NotificationContext(
+        subject=subject, recipients=_emails(users), body=body, sms=sms,
+        recipient_users=users, target_type="Alert", target_id=alert.pk, url=f"/alerts/{alert.pk}",
+    )
 
 
 def build_escalation_context(alert: Alert, level: int) -> NotificationContext:
+    users = _alert_notification_users(alert)
     if level == 1:
-        recipients = _maintenance_recipients(alert) + _manager_recipients()
         label = "RAPPEL — Alerte non acquittée"
     else:  # level 2
-        recipients = _manager_recipients() + _maintenance_recipients(alert)
         label = "ESCALADE CRITIQUE — Alerte non traitée"
 
     subject = f"{label} {alert.severity} | {alert.machine.code} | {alert.title}"
@@ -130,7 +144,10 @@ def build_escalation_context(alert: Alert, level: int) -> NotificationContext:
         f"En attente depuis {int((timezone.now()-alert.created_at).total_seconds()/60)} min.\n"
     )
     sms = f"{label} {alert.machine.code} | {alert.title}"
-    return NotificationContext(subject=subject, recipients=recipients, body=body, sms=sms)
+    return NotificationContext(
+        subject=subject, recipients=_emails(users), body=body, sms=sms,
+        recipient_users=users, target_type="Alert", target_id=alert.pk, url=f"/alerts/{alert.pk}",
+    )
 
 
 def notify_alert_created(alert: Alert) -> None:

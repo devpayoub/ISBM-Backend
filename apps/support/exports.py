@@ -13,11 +13,16 @@ from reportlab.lib.pagesizes import A4, landscape
 from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 from reportlab.lib.styles import getSampleStyleSheet
 
-COLUMNS = ["N° ticket", "Machine", "Criticité", "Statut", "Créé le", "Description"]
+COLUMNS = [
+    "N° ticket", "Machine", "Criticité", "Statut", "Créé le", "Description",
+    "Fournisseur", "Temps d'arrêt (min)", "Durée intervention (min)",
+    "Pièces remplacées", "Coût intervention",
+]
 
 
 def _rows(queryset):
     for t in queryset:
+        closure = getattr(t, "closure", None)
         yield [
             t.ticket_number,
             t.machine.code,
@@ -25,6 +30,11 @@ def _rows(queryset):
             t.get_status_display(),
             t.created_at.strftime("%Y-%m-%d %H:%M"),
             (t.description or "")[:120],
+            t.assigned_supplier.full_name if t.assigned_supplier_id else "",
+            closure.total_downtime_min if closure else "",
+            closure.intervention_duration_min if closure and closure.intervention_duration_min is not None else "",
+            (closure.parts_replaced or "")[:120] if closure else "",
+            closure.intervention_cost if closure and closure.intervention_cost is not None else "",
         ]
 
 

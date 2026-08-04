@@ -4,7 +4,7 @@ from django.db import models
 
 class Role(models.TextChoices):
     ADMIN = "ADMIN", "Administrateur"
-    MANAGER = "MANAGER", "Manager"
+    MANAGER = "MANAGER", "Chef d'équipe"
     CONTROLLER = "CONTROLLER", "Contrôleur"
     MAINTENANCE = "MAINTENANCE", "Maintenance"
     OPERATOR = "OPERATOR", "Opérateur"

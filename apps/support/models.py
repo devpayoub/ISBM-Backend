@@ -117,6 +117,12 @@ class AttachmentCategory(models.TextChoices):
 
 class TicketAttachment(models.Model):
     ticket = models.ForeignKey(Ticket, on_delete=models.CASCADE, related_name="attachments")
+    # Set when a file belongs to a specific solution proposal (notice, plans,
+    # explanatory video, software update...) rather than the ticket generally.
+    solution = models.ForeignKey(
+        "SupplierSolution", on_delete=models.CASCADE,
+        null=True, blank=True, related_name="attachments",
+    )
     file = models.FileField(upload_to=_upload_to)
     category = models.CharField(max_length=20, choices=AttachmentCategory.choices, default=AttachmentCategory.PHOTO)
     uploaded_by = models.ForeignKey(
@@ -134,10 +140,20 @@ class TicketAttachment(models.Model):
         return f"{self.get_category_display()}@{self.uploaded_at:%Y-%m-%d %H:%M}"
 
 
+class CommentRequestType(models.TextChoices):
+    QUESTION = "QUESTION", "Question"
+    TEST_REQUEST = "TEST_REQUEST", "Essai complémentaire demandé"
+    PHOTO_REQUEST = "PHOTO_REQUEST", "Photos supplémentaires demandées"
+
+
 class TicketComment(models.Model):
     ticket = models.ForeignKey(Ticket, on_delete=models.CASCADE, related_name="comments")
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True)
     text = models.TextField()
+    # Blank = a plain comment; set only when the supplier is using this
+    # comment to make one of the spec's three specific diagnostic requests
+    # rather than just talking, so the UI can flag it distinctly.
+    request_type = models.CharField(max_length=20, choices=CommentRequestType.choices, blank=True, default="")
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -200,6 +216,7 @@ class SupplierSolution(models.Model):
 class TicketClosure(models.Model):
     ticket = models.OneToOneField(Ticket, on_delete=models.CASCADE, related_name="closure")
     repair_conforms = models.BooleanField(default=True)
+    machine_back_in_service = models.BooleanField(default=True)
     restarted_at = models.DateTimeField(null=True, blank=True)
     total_downtime_min = models.PositiveIntegerField(default=0)
     intervention_duration_min = models.PositiveIntegerField(null=True, blank=True)

@@ -44,6 +44,7 @@ INSTALLED_APPS = [
     "apps.quality",
     "apps.audit",
     "apps.support",
+    "apps.notifications",
     "apps.common",
 ]
 

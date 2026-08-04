@@ -68,6 +68,17 @@ class MachineViewSet(viewsets.ModelViewSet):
         params = Parameter.objects.filter(is_active=True).order_by("category", "key")
         return Response(ParameterSerializer(params, many=True).data)
 
+    @action(detail=False, methods=["get"])
+    def mine(self, request):
+        """A supplier's own equipment list — read-only, informational (not a
+        security boundary: actual ticket visibility is scoped separately by
+        assigned_supplier on Ticket, not by this M2M). Permission is enforced
+        in urls.py's manual `.as_view()` call, not here — this ViewSet isn't
+        registered through a router, so an `@action`'s `permission_classes`
+        kwarg would silently be ignored."""
+        machines = request.user.assigned_machines.all()
+        return Response(MachineSerializer(machines, many=True).data)
+
 
 @extend_schema(tags=["Machines"])
 class ParameterViewSet(viewsets.ModelViewSet):
