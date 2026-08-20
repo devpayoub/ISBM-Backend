@@ -10,11 +10,15 @@ from rest_framework.exceptions import ValidationError
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
+from apps.audit.services import log_activity
 from apps.common.channels_utils import broadcast_to_alerts_group
 from apps.common.permissions import IsAdminOrManagerOrReadOnly
 
-from .models import Machine, MachineStatus, Parameter
-from .serializers import MachineSerializer, MachineStatusSerializer, ParameterSerializer
+from .models import AuxiliaryEquipment, Machine, MachineComponent, MachineStatus, Mold, Parameter
+from .serializers import (
+    AuxiliaryEquipmentSerializer, MachineComponentSerializer, MachineSerializer,
+    MachineStatusSerializer, MoldSerializer, ParameterSerializer,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -88,3 +92,71 @@ class ParameterViewSet(viewsets.ModelViewSet):
     filterset_fields = ("is_active", "category")
     search_fields = ("key", "label")
     ordering_fields = ("category", "key", "value")
+
+
+@extend_schema(tags=["Machines"])
+class MachineComponentViewSet(viewsets.ModelViewSet):
+    queryset = MachineComponent.objects.select_related("machine")
+    serializer_class = MachineComponentSerializer
+    permission_classes = (IsAuthenticated, IsAdminOrManagerOrReadOnly)
+    filterset_fields = ("machine", "is_active")
+    search_fields = ("name", "reference")
+
+    def perform_create(self, serializer):
+        obj = serializer.save()
+        log_activity(self.request.user, "machine_component.created", "MachineComponent", obj.pk, f"{obj.name} — {obj.machine.code}")
+
+    def perform_update(self, serializer):
+        obj = serializer.save()
+        log_activity(self.request.user, "machine_component.updated", "MachineComponent", obj.pk, f"{obj.name} — {obj.machine.code}")
+
+    def perform_destroy(self, instance):
+        detail = f"{instance.name} — {instance.machine.code}"
+        pk = instance.pk
+        instance.delete()
+        log_activity(self.request.user, "machine_component.deleted", "MachineComponent", pk, detail)
+
+
+@extend_schema(tags=["Machines"])
+class AuxiliaryEquipmentViewSet(viewsets.ModelViewSet):
+    queryset = AuxiliaryEquipment.objects.prefetch_related("machines")
+    serializer_class = AuxiliaryEquipmentSerializer
+    permission_classes = (IsAuthenticated, IsAdminOrManagerOrReadOnly)
+    filterset_fields = ("is_active",)
+    search_fields = ("name", "reference")
+
+    def perform_create(self, serializer):
+        obj = serializer.save()
+        log_activity(self.request.user, "auxiliary_equipment.created", "AuxiliaryEquipment", obj.pk, obj.name)
+
+    def perform_update(self, serializer):
+        obj = serializer.save()
+        log_activity(self.request.user, "auxiliary_equipment.updated", "AuxiliaryEquipment", obj.pk, obj.name)
+
+    def perform_destroy(self, instance):
+        detail, pk = instance.name, instance.pk
+        instance.delete()
+        log_activity(self.request.user, "auxiliary_equipment.deleted", "AuxiliaryEquipment", pk, detail)
+
+
+@extend_schema(tags=["Machines"])
+class MoldViewSet(viewsets.ModelViewSet):
+    queryset = Mold.objects.select_related("machine")
+    serializer_class = MoldSerializer
+    permission_classes = (IsAuthenticated, IsAdminOrManagerOrReadOnly)
+    filterset_fields = ("machine", "is_active")
+    search_fields = ("name", "reference")
+
+    def perform_create(self, serializer):
+        obj = serializer.save()
+        log_activity(self.request.user, "mold.created", "Mold", obj.pk, f"{obj.name} — {obj.machine.code}")
+
+    def perform_update(self, serializer):
+        obj = serializer.save()
+        log_activity(self.request.user, "mold.updated", "Mold", obj.pk, f"{obj.name} — {obj.machine.code}")
+
+    def perform_destroy(self, instance):
+        detail = f"{instance.name} — {instance.machine.code}"
+        pk = instance.pk
+        instance.delete()
+        log_activity(self.request.user, "mold.deleted", "Mold", pk, detail)

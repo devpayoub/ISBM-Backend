@@ -1,5 +1,6 @@
 from django.contrib.auth.models import AbstractUser, BaseUserManager
 from django.db import models
+from django.utils import timezone
 
 
 class Role(models.TextChoices):
@@ -85,3 +86,87 @@ class CustomUser(AbstractUser):
 
     def __str__(self) -> str:
         return f"{self.full_name} ({self.get_role_display()})"
+
+
+class ShiftAssignment(models.Model):
+    """Historical record of who worked which shift, on which machine, and
+    when — unlike CustomUser.shift/is_on_duty/machine_assignment (single
+    current-value fields), this is what lets Reclamation/Package answer
+    "who was working on machine X at date/time Y". Self-populating: rows
+    are created/closed by clock_in()/clock_out(), called from
+    LoginView/LogoutView — never entered by hand, so the RH page is a
+    read-only view over this table, the same way the audit log is."""
+
+    user = models.ForeignKey(
+        "accounts.CustomUser", on_delete=models.CASCADE, related_name="shift_assignments",
+    )
+    machine = models.ForeignKey(
+        "machines.Machine", on_delete=models.SET_NULL,
+        null=True, blank=True, related_name="shift_assignments",
+    )
+    shift = models.CharField(max_length=20, choices=Shift.choices)
+    starts_at = models.DateTimeField()
+    ends_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = "Affectation de shift"
+        verbose_name_plural = "Affectations de shift"
+        ordering = ["-starts_at"]
+        indexes = [
+            models.Index(fields=["user", "-starts_at"]),
+            models.Index(fields=["machine", "-starts_at"]),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.user.full_name} — {self.shift} @ {self.starts_at:%Y-%m-%d %H:%M}"
+
+    @classmethod
+    def working_at(cls, when, machine=None, role=None):
+        """Everyone on shift at a given datetime, optionally scoped to a
+        machine and/or role. An assignment with no ends_at is treated as
+        still ongoing (open-ended)."""
+        from django.db.models import Q
+        qs = cls.objects.filter(starts_at__lte=when).filter(
+            Q(ends_at__isnull=True) | Q(ends_at__gte=when)
+        )
+        if machine is not None:
+            qs = qs.filter(machine=machine)
+        if role is not None:
+            qs = qs.filter(user__role=role)
+        return qs.select_related("user", "machine")
+
+    @classmethod
+    def working_between(cls, start, end, machine=None):
+        """Everyone whose shift overlaps [start, end) at all — used for
+        Package/Bag traceability (plan.md §9), where production spans a
+        range rather than a single instant like Reclamation's working_at.
+        An assignment with no ends_at is treated as still ongoing."""
+        from django.db.models import Q
+        qs = cls.objects.filter(starts_at__lt=end).filter(
+            Q(ends_at__isnull=True) | Q(ends_at__gt=start)
+        )
+        if machine is not None:
+            qs = qs.filter(machine=machine)
+        return qs.select_related("user", "machine")
+
+    @classmethod
+    def clock_in(cls, user):
+        """Called on login. Closes any stale open assignment for this user
+        first (e.g. a missed logout from a previous session) so there's
+        never more than one open row per user, then opens a new one from
+        their current shift/machine. Users with no shift configured (e.g.
+        ADMIN, SUPPLIER) aren't tracked here — nothing to open."""
+        if not user.shift:
+            return None
+        cls.objects.filter(user=user, ends_at__isnull=True).update(ends_at=timezone.now())
+        return cls.objects.create(
+            user=user, machine=user.machine_assignment, shift=user.shift,
+            starts_at=timezone.now(),
+        )
+
+    @classmethod
+    def clock_out(cls, user):
+        """Called on logout. Closes the user's currently open assignment,
+        if any — a no-op for users clock_in() never opened one for."""
+        cls.objects.filter(user=user, ends_at__isnull=True).update(ends_at=timezone.now())

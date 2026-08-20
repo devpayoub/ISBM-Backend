@@ -14,12 +14,21 @@ from apps.alerts.models import AlertStatus
 from apps.alerts.services import broadcast_alert_event, sync_machine_andon_status
 from apps.audit.services import log_activity
 from apps.common.permissions import IsAdmin, IsAdminOrManager, IsController, IsMaintenance
+from apps.machines.models import AuxiliaryEquipment, Machine
 
-from .models import Intervention, PmStatus, PreventiveMaintenance
+from .models import (
+    ChecklistItem, ChecklistTemplate, ControlResultStatus, Intervention,
+    MaintenanceControl, MaintenanceControlResult, PmStatus, PreventiveMaintenance,
+)
 from .serializers import (
-    InterventionFinishSerializer, InterventionSerializer,
+    ChecklistTemplateSerializer, InterventionFinishSerializer,
+    InterventionSerializer, MaintenanceControlSerializer,
+    MaintenanceControlStartSerializer, MaintenanceControlSubmitResultsSerializer,
     PreventiveMaintenanceSerializer,
 )
+from .services import resolve_template
+
+CAN_RUN_CONTROL = ("CONTROLLER",)
 
 
 @extend_schema(tags=["Maintenance"])
@@ -150,3 +159,122 @@ class PreventiveMaintenanceViewSet(viewsets.ModelViewSet):
     def due(self, request):
         rows = self.get_queryset().filter(status__in=[PmStatus.DUE, PmStatus.OVERDUE])
         return Response(PreventiveMaintenanceSerializer(rows, many=True).data)
+
+
+# ─────────────────────── Controller "Control" page (plan.md §12) ───────────────────────
+
+@extend_schema(tags=["Maintenance"])
+class ChecklistTemplateViewSet(viewsets.ReadOnlyModelViewSet):
+    """Seeded once from the PDF, not user-editable in v1 — read-only."""
+    queryset = ChecklistTemplate.objects.filter(is_active=True).prefetch_related("sections__items")
+    serializer_class = ChecklistTemplateSerializer
+    permission_classes = (IsAuthenticated,)
+
+
+@extend_schema(tags=["Maintenance"])
+class MaintenanceControlViewSet(viewsets.ReadOnlyModelViewSet):
+    """Creation only happens through `start` (get-or-create + auto-populate
+    results from the target's template), never a plain POST — that's what
+    keeps 'exactly one of machine/equipment' true by construction instead of
+    needing model-level validation."""
+    queryset = MaintenanceControl.objects.select_related(
+        "template", "machine", "equipment", "controller", "confirmed_by",
+    ).prefetch_related("results__item__section")
+    serializer_class = MaintenanceControlSerializer
+    permission_classes = (IsAuthenticated,)
+    filterset_fields = ("machine", "equipment", "shift", "date", "template", "controller")
+    ordering = ["-date", "-id"]
+
+    @action(detail=False, methods=["post"])
+    def start(self, request):
+        if request.user.role not in CAN_RUN_CONTROL:
+            raise PermissionDenied("Rôle insuffisant pour démarrer un contrôle préventif.")
+        ser = MaintenanceControlStartSerializer(data=request.data)
+        ser.is_valid(raise_exception=True)
+        data = ser.validated_data
+
+        machine = None
+        equipment = None
+        if data.get("machine"):
+            machine = Machine.objects.filter(pk=data["machine"]).first()
+            if not machine:
+                raise ValidationError("Machine introuvable.")
+        else:
+            equipment = AuxiliaryEquipment.objects.filter(pk=data["equipment"]).first()
+            if not equipment:
+                raise ValidationError("Équipement introuvable.")
+
+        template = resolve_template(machine=machine, equipment=equipment)
+
+        control, created = MaintenanceControl.objects.get_or_create(
+            date=data["date"], shift=data["shift"], template=template,
+            machine=machine, equipment=equipment,
+            defaults={"controller": request.user},
+        )
+        if created:
+            items = ChecklistItem.objects.filter(section__template=template)
+            MaintenanceControlResult.objects.bulk_create([
+                MaintenanceControlResult(control=control, item=item) for item in items
+            ])
+            log_activity(
+                request.user, "maintenance_control.started", "MaintenanceControl", control.pk,
+                f"{control.target_label} — {control.date} {control.shift}",
+            )
+
+        control.refresh_from_db()
+        return Response(
+            MaintenanceControlSerializer(control).data,
+            status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
+        )
+
+    @action(detail=True, methods=["patch"], url_path="results")
+    def submit_results(self, request, pk=None):
+        control = self.get_object()
+        if request.user.role not in CAN_RUN_CONTROL:
+            raise PermissionDenied("Rôle insuffisant pour saisir un contrôle préventif.")
+        if control.is_locked():
+            raise ValidationError("Ce contrôle est déjà confirmé — verrouillé.")
+
+        ser = MaintenanceControlSubmitResultsSerializer(data=request.data)
+        ser.is_valid(raise_exception=True)
+
+        results_by_item = {r.item_id: r for r in control.results.all()}
+        for row in ser.validated_data["results"]:
+            result = results_by_item.get(row["item"])
+            if not result:
+                raise ValidationError(f"Élément de checklist {row['item']} introuvable pour ce contrôle.")
+            result.status = row["status"]
+            result.note = row.get("note", "")
+            result.save()
+
+        control.refresh_from_db()
+        return Response(MaintenanceControlSerializer(control).data)
+
+    @action(detail=True, methods=["patch"])
+    def confirm(self, request, pk=None):
+        control = self.get_object()
+        if request.user.role not in CAN_RUN_CONTROL:
+            raise PermissionDenied("Rôle insuffisant pour confirmer un contrôle préventif.")
+        if control.is_locked():
+            raise ValidationError("Ce contrôle est déjà confirmé.")
+
+        # One confirmation per controller per day, across every machine/equipment —
+        # the first "Confirmer le contrôle" of the day is also the last.
+        already_confirmed_today = MaintenanceControl.objects.filter(
+            confirmed_by=request.user, date=control.date,
+        ).exclude(pk=control.pk).exists()
+        if already_confirmed_today:
+            raise ValidationError("Vous avez déjà confirmé un contrôle aujourd'hui — un seul contrôle peut être confirmé par jour.")
+
+        missing_notes = control.results.filter(status=ControlResultStatus.PROBLEM, note="")
+        if missing_notes.exists():
+            raise ValidationError("Une note est requise pour chaque élément marqué « Problème ».")
+
+        control.confirmed_at = timezone.now()
+        control.confirmed_by = request.user
+        control.save()
+        log_activity(
+            request.user, "maintenance_control.confirmed", "MaintenanceControl", control.pk,
+            f"{control.target_label} — {control.date} {control.shift}",
+        )
+        return Response(MaintenanceControlSerializer(control).data)

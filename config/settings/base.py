@@ -46,6 +46,10 @@ INSTALLED_APPS = [
     "apps.support",
     "apps.notifications",
     "apps.common",
+    "apps.stock",
+    "apps.catalog",
+    "apps.reclamation",
+    "apps.package",
 ]
 
 MIDDLEWARE = [

@@ -3,6 +3,8 @@ from django.contrib.auth.password_validation import validate_password
 from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 
+from .models import ShiftAssignment
+
 User = get_user_model()
 
 
@@ -53,6 +55,20 @@ class MeSerializer(UserSerializer):
         read_only_fields = UserSerializer.Meta.read_only_fields + (
             "email", "role", "machine_assignment", "assigned_machines", "is_staff", "is_active",
         )
+
+
+class ShiftAssignmentSerializer(serializers.ModelSerializer):
+    user_name = serializers.CharField(source="user.full_name", read_only=True)
+    user_role = serializers.CharField(source="user.role", read_only=True, default="")
+    machine_code = serializers.CharField(source="machine.code", read_only=True, default="")
+
+    class Meta:
+        model = ShiftAssignment
+        fields = (
+            "id", "user", "user_name", "user_role", "machine", "machine_code",
+            "shift", "starts_at", "ends_at", "created_at",
+        )
+        read_only_fields = ("id", "created_at")
 
 
 class LoginSerializer(TokenObtainPairSerializer):

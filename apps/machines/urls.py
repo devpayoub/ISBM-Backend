@@ -3,10 +3,16 @@ from rest_framework.routers import DefaultRouter
 from apps.common.permissions import IsSupplier
 from rest_framework.permissions import IsAuthenticated
 
-from .views import MachineViewSet, ParameterViewSet
+from .views import (
+    AuxiliaryEquipmentViewSet, MachineComponentViewSet, MachineViewSet,
+    MoldViewSet, ParameterViewSet,
+)
 
 router = DefaultRouter(trailing_slash=False)
 router.register("parameters", ParameterViewSet, basename="parameters")
+router.register("components", MachineComponentViewSet, basename="machine-components")
+router.register("auxiliary-equipment", AuxiliaryEquipmentViewSet, basename="auxiliary-equipment")
+router.register("molds", MoldViewSet, basename="molds")
 
 # Register machine routes separately because we still want custom actions wired.
 from django.urls import path, include

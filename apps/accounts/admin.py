@@ -1,7 +1,7 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin
 
-from .models import CustomUser
+from .models import CustomUser, ShiftAssignment
 
 
 @admin.register(CustomUser)
@@ -29,3 +29,12 @@ class CustomUserAdmin(UserAdmin):
     )
     readonly_fields = ("last_login", "date_joined")
     filter_horizontal = ("assigned_machines", "groups", "user_permissions")
+
+
+@admin.register(ShiftAssignment)
+class ShiftAssignmentAdmin(admin.ModelAdmin):
+    list_display = ("user", "machine", "shift", "starts_at", "ends_at")
+    list_filter = ("shift", "machine")
+    search_fields = ("user__email", "user__first_name", "user__last_name")
+    autocomplete_fields = ("user", "machine")
+    ordering = ("-starts_at",)

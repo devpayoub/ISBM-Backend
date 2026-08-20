@@ -7,11 +7,17 @@ from rest_framework.views import APIView
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenObtainPairView
 
+from django.utils.dateparse import parse_datetime
+from rest_framework.exceptions import PermissionDenied, ValidationError
+
 from apps.audit.services import log_activity
 from apps.common.permissions import IsAdmin, IsAdminOrManagerOrMaintenance
 
-from .models import CustomUser
-from .serializers import LoginSerializer, MeSerializer, RegisterSerializer, UserSerializer
+from .models import CustomUser, ShiftAssignment
+from .serializers import (
+    LoginSerializer, MeSerializer, RegisterSerializer, ShiftAssignmentSerializer,
+    UserSerializer,
+)
 
 
 @extend_schema(tags=["Auth"])
@@ -23,6 +29,7 @@ class LoginView(TokenObtainPairView):
         serializer.is_valid(raise_exception=True)
         user = serializer.user
         log_activity(user, "auth.login", "CustomUser", user.pk, user.email)
+        ShiftAssignment.clock_in(user)
         return Response(serializer.validated_data, status=status.HTTP_200_OK)
 
 
@@ -36,6 +43,7 @@ class LogoutView(APIView):
         except Exception:
             return Response(status=status.HTTP_400_BAD_REQUEST)
         log_activity(request.user, "auth.logout", "CustomUser", request.user.pk, request.user.email)
+        ShiftAssignment.clock_out(request.user)
         return Response(status=status.HTTP_205_RESET_CONTENT)
 
 
@@ -74,3 +82,54 @@ class UserViewSet(viewsets.ModelViewSet):
         ser.is_valid(raise_exception=True)
         user = ser.save()
         return Response(UserSerializer(user).data, status=status.HTTP_201_CREATED)
+
+
+@extend_schema(tags=["RH"])
+class ShiftAssignmentViewSet(viewsets.ModelViewSet):
+    """Read is open to any authenticated internal role (Reclamation/Package
+    lookups in later phases need this); mutation is Admin/Manager only,
+    matching NonConformity's inline-role-check style rather than a
+    class-level permission so the same viewset can also host `working_at`
+    (open to any authenticated role, not just admin/manager)."""
+
+    queryset = ShiftAssignment.objects.select_related("user", "machine")
+    serializer_class = ShiftAssignmentSerializer
+    permission_classes = (IsAuthenticated,)
+    filterset_fields = ("user", "machine", "shift")
+    ordering = ["-starts_at"]
+
+    def _check_manage(self):
+        if self.request.user.role not in ("ADMIN", "MANAGER"):
+            raise PermissionDenied("Rôle insuffisant pour gérer les affectations de shift.")
+
+    def perform_create(self, serializer):
+        self._check_manage()
+        obj = serializer.save()
+        log_activity(self.request.user, "shift_assignment.created", "ShiftAssignment", obj.pk, f"{obj.user.full_name} — {obj.shift}")
+
+    def perform_update(self, serializer):
+        self._check_manage()
+        obj = serializer.save()
+        log_activity(self.request.user, "shift_assignment.updated", "ShiftAssignment", obj.pk, f"{obj.user.full_name} — {obj.shift}")
+
+    def perform_destroy(self, instance):
+        self._check_manage()
+        detail = f"{instance.user.full_name} — {instance.shift}"
+        pk = instance.pk
+        instance.delete()
+        log_activity(self.request.user, "shift_assignment.deleted", "ShiftAssignment", pk, detail)
+
+    @action(detail=False, methods=["get"])
+    def working_at(self, request):
+        """Who was on shift at a given datetime — the lookup Reclamation
+        and Package traceability (later phases) depend on."""
+        when_raw = request.query_params.get("when")
+        if not when_raw:
+            raise ValidationError("Paramètre 'when' requis (ISO 8601).")
+        when = parse_datetime(when_raw)
+        if when is None:
+            raise ValidationError("Format de date invalide pour 'when' (attendu ISO 8601).")
+        machine_id = request.query_params.get("machine")
+        role = request.query_params.get("role")
+        rows = ShiftAssignment.working_at(when, machine=machine_id, role=role)
+        return Response(ShiftAssignmentSerializer(rows, many=True).data)

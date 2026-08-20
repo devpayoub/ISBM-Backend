@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import Machine, Parameter
+from .models import AuxiliaryEquipment, Machine, MachineComponent, Mold, Parameter
 
 
 @admin.register(Machine)
@@ -17,3 +17,27 @@ class ParameterAdmin(admin.ModelAdmin):
     list_filter = ("category", "is_active")
     search_fields = ("key", "label")
     ordering = ("category", "key")
+
+
+@admin.register(MachineComponent)
+class MachineComponentAdmin(admin.ModelAdmin):
+    list_display = ("name", "reference", "machine", "is_active")
+    list_filter = ("machine", "is_active")
+    search_fields = ("name", "reference")
+    autocomplete_fields = ("machine",)
+
+
+@admin.register(AuxiliaryEquipment)
+class AuxiliaryEquipmentAdmin(admin.ModelAdmin):
+    list_display = ("name", "reference", "is_active")
+    list_filter = ("is_active",)
+    search_fields = ("name", "reference")
+    filter_horizontal = ("machines",)
+
+
+@admin.register(Mold)
+class MoldAdmin(admin.ModelAdmin):
+    list_display = ("name", "reference", "machine", "is_active")
+    list_filter = ("machine", "is_active")
+    search_fields = ("name", "reference")
+    autocomplete_fields = ("machine",)
