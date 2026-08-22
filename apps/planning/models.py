@@ -1,5 +1,6 @@
 from django.conf import settings
 from django.db import models
+from django.utils import timezone
 
 
 class ProductionPlan(models.Model):
@@ -90,3 +91,12 @@ class PlanningOrder(models.Model):
 
     def __str__(self) -> str:
         return f"{self.product_reference or 'Commande'} × {self.quantity} — {self.machine_id}"
+
+    def save(self, *args, **kwargs):
+        # Auto-numbered like Package/Ticket — the create form no longer
+        # collects this by hand.
+        if not self.product_reference:
+            year = timezone.now().year
+            count = PlanningOrder.objects.filter(product_reference__startswith=f"ORD-{year}-").count() + 1
+            self.product_reference = f"ORD-{year}-{count:04d}"
+        super().save(*args, **kwargs)

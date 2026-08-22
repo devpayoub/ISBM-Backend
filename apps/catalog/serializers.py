@@ -12,7 +12,7 @@ class BottleCharacteristicSerializer(serializers.ModelSerializer):
     class Meta:
         model = BottleCharacteristic
         fields = (
-            "id", "category", "reference",
+            "id", "category", "reference", "time_per_bottle_sec",
             "raw_material", "raw_material_name", "raw_material_reference", "raw_material_qty_g",
             "colorant", "colorant_name", "colorant_reference", "colorant_qty_g",
             "bouchant_type", "bouchant_raw_material_qty_g", "bouchant_colorant_qty_g",

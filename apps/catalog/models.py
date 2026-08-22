@@ -17,6 +17,10 @@ class BottleCharacteristic(models.Model):
 
     category = models.CharField(max_length=120)
     reference = models.CharField(max_length=60, blank=True, default="")
+    # Read by Planning's order form to auto-fill "Temps / bouteille (s)"
+    # instead of it being typed by hand each time — same unit/precision as
+    # PlanningOrder.time_per_bottle_sec so it can be copied over as-is.
+    time_per_bottle_sec = models.DecimalField(max_digits=8, decimal_places=3, null=True, blank=True)
 
     # Bottle body
     raw_material = models.ForeignKey(

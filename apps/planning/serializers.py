@@ -30,7 +30,7 @@ class PlanningOrderSerializer(serializers.ModelSerializer):
             "requested_start", "status", "notes",
             "created_by", "created_by_name", "created_at", "updated_at",
         )
-        read_only_fields = ("id", "status", "created_by", "created_by_name", "created_at", "updated_at")
+        read_only_fields = ("id", "product_reference", "status", "created_by", "created_by_name", "created_at", "updated_at")
 
     def validate_quantity(self, value):
         if value <= 0:
