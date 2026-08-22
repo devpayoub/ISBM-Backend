@@ -1,6 +1,6 @@
 from datetime import timedelta
 
-from django.db.models import Count, Sum
+from django.db.models import Count, F, Sum
 from django.utils import timezone
 from drf_spectacular.utils import extend_schema
 from rest_framework.permissions import IsAuthenticated
@@ -147,3 +147,87 @@ class ShiftReportView(APIView):
             alerts_nb = Alert.objects.filter(created_at__date=today, shift=shift).count()
             per_shift[shift] = {"production": agg, "alerts": alerts_nb}
         return Response({"date": str(today), "shifts": per_shift})
+
+
+@extend_schema(tags=["Dashboard"])
+class MaterialsOverviewView(APIView):
+    """Stock/production aggregate for the dashboard (Phase 6 of the
+    material-requirement plan) — reuses every earlier phase's own service
+    instead of re-deriving any of the maths: apps.catalog.services.
+    max_producible (capacity + limiting component), apps.planning.services.
+    calculate_schedule (per-order stock status, Phase 3), apps.stock.
+    services.remaining_quantity_for_order (planned-vs-actual, Phase 5)."""
+    permission_classes = (IsAuthenticated,)
+
+    def get(self, request):
+        from apps.catalog.models import BottleCharacteristic
+        from apps.catalog.services import max_producible
+        from apps.planning.models import PlanningOrder, PlanningOrderStatus
+        from apps.planning.services import calculate_schedule
+        from apps.stock.models import StockItem
+        from apps.stock.services import remaining_quantity_for_order
+
+        active_items = StockItem.objects.filter(is_active=True)
+        near_threshold_qs = active_items.filter(quantity__lte=F("min_threshold")).order_by("quantity")
+        near_threshold = [
+            {
+                "id": i.id, "reference": i.reference, "name": i.name,
+                "quantity": str(i.quantity), "unit": i.unit, "status": i.get_status(),
+            }
+            for i in near_threshold_qs[:10]
+        ]
+
+        capacity_rows = []
+        bottles = BottleCharacteristic.objects.filter(is_active=True).select_related("raw_material", "colorant")
+        for b in bottles:
+            cap = max_producible(b)
+            capacity_rows.append({
+                "id": b.id, "category": b.category,
+                "physical_capacity": cap.physical_capacity,
+                "available_capacity": cap.available_capacity,
+                "limiting_component": cap.limiting_component,
+                "limiting_component_name": cap.limiting_component_name,
+            })
+
+        # Per-order stock status, straight from Planning's own sequential
+        # simulation (Phase 3) — never re-derived here.
+        status_counts = {"OK": 0, "WARNING": 0, "INSUFFICIENT": 0}
+        for row in calculate_schedule():
+            check = row.get("material_check")
+            if check:
+                status_counts[check["stock_status"]] = status_counts.get(check["stock_status"], 0) + 1
+
+        # Planned-vs-actual: sum each active order's original quantity
+        # against how much of it remains unproduced (Phase 5's own
+        # remaining_quantity_for_order) — the delta is what's actually been
+        # validated/produced so far.
+        active_orders = PlanningOrder.objects.filter(
+            status__in=(PlanningOrderStatus.QUEUED, PlanningOrderStatus.IN_PROGRESS),
+        )
+        planned_qty = 0
+        remaining_qty = 0
+        for order in active_orders:
+            planned_qty += order.quantity
+            remaining_qty += remaining_quantity_for_order(order)
+        actual_qty = planned_qty - remaining_qty
+
+        return Response({
+            "stock": {
+                "total_active_items": active_items.count(),
+                "near_threshold_count": near_threshold_qs.count(),
+                "near_threshold": near_threshold,
+            },
+            "capacity": capacity_rows,
+            "orders": {
+                "queued": PlanningOrder.objects.filter(status=PlanningOrderStatus.QUEUED).count(),
+                "in_progress": PlanningOrder.objects.filter(status=PlanningOrderStatus.IN_PROGRESS).count(),
+                "stock_ok": status_counts["OK"],
+                "stock_warning": status_counts["WARNING"],
+                "stock_insufficient": status_counts["INSUFFICIENT"],
+            },
+            "production": {
+                "planned_quantity": planned_qty,
+                "actual_quantity": actual_qty,
+                "completion_pct": round((actual_qty / planned_qty) * 100, 1) if planned_qty else 0,
+            },
+        })

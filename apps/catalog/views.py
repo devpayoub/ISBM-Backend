@@ -51,17 +51,23 @@ class BottleCharacteristicViewSet(viewsets.ModelViewSet):
     def capacity(self, request):
         """"How many bottles we have" answered from current Stock, per
         recipe — never stored, always recomputed on read (same convention
-        as Planning's schedule/material_check)."""
+        as Planning's schedule/material_check). max_producible keeps its
+        pre-Phase-6 meaning (reservation-aware) so existing consumers don't
+        need to change; physical_capacity/limiting_component are additive."""
         rows = self.get_queryset().filter(is_active=True)
-        return Response([
-            {
+        result = []
+        for b in rows:
+            cap = max_producible(b)
+            result.append({
                 "id": b.id,
                 "category": b.category,
                 "raw_material_reference": b.raw_material.reference,
                 "raw_material_available_kg": str(b.raw_material.quantity),
                 "colorant_reference": b.colorant.reference if b.colorant else "",
                 "colorant_available_kg": str(b.colorant.quantity) if b.colorant else None,
-                "max_producible": max_producible(b),
-            }
-            for b in rows
-        ])
+                "max_producible": cap.available_capacity,
+                "physical_capacity": cap.physical_capacity,
+                "limiting_component": cap.limiting_component,
+                "limiting_component_name": cap.limiting_component_name,
+            })
+        return Response(result)
