@@ -24,20 +24,26 @@ def _material_check(order):
     if not bottle:
         return None
 
-    rows = calculate_material_requirements(bottle, order.quantity)
+    rows = calculate_material_requirements(bottle, order.quantity, exclude_order=order)
     raw_rows = [r for r in rows if r.component_type in _RAW_TYPES]
     colorant_rows = [r for r in rows if r.component_type in _COLORANT_TYPES]
 
     raw_required_kg = sum((r.required_qty_kg for r in raw_rows), Decimal("0"))
     raw_available_kg = raw_rows[0].available_stock_kg if raw_rows else Decimal("0")
+    raw_physical_kg = raw_rows[0].physical_stock_kg if raw_rows else Decimal("0")
+    raw_reserved_kg = raw_rows[0].reserved_stock_kg if raw_rows else Decimal("0")
     raw_ok = raw_rows[0].status != "INSUFFICIENT" if raw_rows else True
 
     colorant_required_kg = None
     colorant_available_kg = None
+    colorant_physical_kg = None
+    colorant_reserved_kg = None
     colorant_ok = True
     if colorant_rows:
         colorant_required_kg = sum((r.required_qty_kg for r in colorant_rows), Decimal("0"))
         colorant_available_kg = colorant_rows[0].available_stock_kg
+        colorant_physical_kg = colorant_rows[0].physical_stock_kg
+        colorant_reserved_kg = colorant_rows[0].reserved_stock_kg
         colorant_ok = colorant_rows[0].status != "INSUFFICIENT"
 
     return {
@@ -45,9 +51,13 @@ def _material_check(order):
         "bottle_category": bottle.category,
         "raw_material_reference": bottle.raw_material.reference,
         "raw_material_required_kg": str(raw_required_kg),
+        "raw_material_physical_kg": str(raw_physical_kg),
+        "raw_material_reserved_kg": str(raw_reserved_kg),
         "raw_material_available_kg": str(raw_available_kg),
         "colorant_reference": bottle.colorant.reference if bottle.colorant else "",
         "colorant_required_kg": str(colorant_required_kg) if colorant_required_kg is not None else None,
+        "colorant_physical_kg": str(colorant_physical_kg) if colorant_physical_kg is not None else None,
+        "colorant_reserved_kg": str(colorant_reserved_kg) if colorant_reserved_kg is not None else None,
         "colorant_available_kg": str(colorant_available_kg) if colorant_available_kg is not None else None,
         "stock_sufficient": raw_ok and colorant_ok,
     }

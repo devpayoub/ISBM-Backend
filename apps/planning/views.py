@@ -12,6 +12,7 @@ from rest_framework.response import Response
 from apps.audit.services import log_activity
 from apps.common.permissions import IsAdminOrManagerOrReadOnly
 from apps.machines.models import Machine
+from apps.stock.services import sync_reservations_for_order
 
 from .models import PlanningOrder, PlanningOrderStatus, ProductionPlan
 from .serializers import PlanningOrderSerializer, ProductionPlanSerializer
@@ -80,12 +81,14 @@ class PlanningOrderViewSet(viewsets.ModelViewSet):
         if self.request.user.role not in MANAGE_ROLES:
             raise PermissionDenied("Rôle insuffisant pour créer une commande de planning.")
         obj = serializer.save(created_by=self.request.user)
+        sync_reservations_for_order(obj)
         log_activity(self.request.user, "planning_order.created", "PlanningOrder", obj.pk, f"{obj.product_reference} × {obj.quantity}")
 
     def perform_update(self, serializer):
         if self.request.user.role not in MANAGE_ROLES:
             raise PermissionDenied("Rôle insuffisant pour modifier une commande de planning.")
         obj = serializer.save()
+        sync_reservations_for_order(obj)
         log_activity(self.request.user, "planning_order.updated", "PlanningOrder", obj.pk, f"{obj.product_reference} × {obj.quantity}")
 
     def perform_destroy(self, instance):

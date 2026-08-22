@@ -20,7 +20,7 @@ MANAGE_ROLES = ("ADMIN", "MANAGER")
 
 @extend_schema(tags=["Stock"])
 class StockItemViewSet(viewsets.ModelViewSet):
-    queryset = StockItem.objects.select_related("created_by").prefetch_related("movements__created_by")
+    queryset = StockItem.objects.select_related("created_by").prefetch_related("movements__created_by", "reservations")
     serializer_class = StockItemSerializer
     permission_classes = (IsAuthenticated,)
     filterset_fields = ("type", "is_active")

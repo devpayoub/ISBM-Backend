@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import StockItem, StockMovement
+from .models import StockItem, StockMovement, StockReservation
 
 
 @admin.register(StockItem)
@@ -16,3 +16,10 @@ class StockMovementAdmin(admin.ModelAdmin):
     list_display = ("stock_item", "type", "delta", "quantity_before", "quantity_after", "created_by", "created_at")
     list_filter = ("type",)
     search_fields = ("stock_item__name", "stock_item__reference", "reason")
+
+
+@admin.register(StockReservation)
+class StockReservationAdmin(admin.ModelAdmin):
+    list_display = ("stock_item", "planning_order", "component_type", "quantity", "updated_at")
+    list_filter = ("component_type",)
+    search_fields = ("stock_item__reference", "planning_order__product_reference")

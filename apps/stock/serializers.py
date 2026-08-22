@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 from rest_framework import serializers
 
 from .models import StockItem, StockMovement
@@ -17,6 +19,8 @@ class StockMovementSerializer(serializers.ModelSerializer):
 
 class StockItemSerializer(serializers.ModelSerializer):
     status = serializers.SerializerMethodField()
+    reserved_quantity = serializers.SerializerMethodField()
+    available_quantity = serializers.SerializerMethodField()
     created_by_name = serializers.CharField(source="created_by.full_name", read_only=True, default="")
     movements = StockMovementSerializer(many=True, read_only=True)
 
@@ -24,17 +28,27 @@ class StockItemSerializer(serializers.ModelSerializer):
         model = StockItem
         fields = (
             "id", "type", "name", "reference", "supplier", "ral", "unit",
-            "quantity", "min_threshold", "batch", "received_at", "notes",
+            "quantity", "reserved_quantity", "available_quantity",
+            "min_threshold", "batch", "received_at", "notes",
             "is_active", "status", "created_by", "created_by_name",
             "movements", "created_at", "updated_at",
         )
         read_only_fields = (
-            "id", "quantity", "status", "created_by", "created_by_name",
-            "movements", "created_at", "updated_at",
+            "id", "quantity", "reserved_quantity", "available_quantity", "status",
+            "created_by", "created_by_name", "movements", "created_at", "updated_at",
         )
 
     def get_status(self, obj):
         return obj.get_status()
+
+    def get_reserved_quantity(self, obj):
+        # Physical stock spoken-for by queued Planning orders that hasn't
+        # been consumed yet (apps.stock.models.StockReservation).
+        return str(sum((r.quantity for r in obj.reservations.all()), Decimal("0")))
+
+    def get_available_quantity(self, obj):
+        reserved = sum((r.quantity for r in obj.reservations.all()), Decimal("0"))
+        return str(obj.quantity - reserved)
 
 
 class StockMoveSerializer(serializers.Serializer):

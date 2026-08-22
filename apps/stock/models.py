@@ -83,3 +83,30 @@ class StockMovement(models.Model):
 
     def __str__(self) -> str:
         return f"{self.get_type_display()} {self.delta} — {self.stock_item.reference}"
+
+
+class StockReservation(models.Model):
+    """Stock spoken-for by a queued PlanningOrder but not yet physically
+    consumed — Planning reserves, it never deducts physical stock (that only
+    happens once production against the order is validated). One row per
+    (order, stock_item, component_type); wholesale recomputed by
+    apps.stock.services.sync_reservations_for_order() on every order
+    create/update — never hand-edited, matching this app's "always
+    recomputed, never stored by hand" convention used elsewhere (Planning
+    schedule, Catalog capacity)."""
+
+    stock_item = models.ForeignKey(StockItem, on_delete=models.PROTECT, related_name="reservations")
+    planning_order = models.ForeignKey("planning.PlanningOrder", on_delete=models.CASCADE, related_name="reservations")
+    component_type = models.CharField(max_length=20)
+    quantity = models.DecimalField(max_digits=12, decimal_places=3)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Réservation de stock"
+        verbose_name_plural = "Réservations de stock"
+        unique_together = [("planning_order", "stock_item", "component_type")]
+        ordering = ["stock_item", "planning_order"]
+
+    def __str__(self) -> str:
+        return f"{self.stock_item.reference} × {self.quantity} — commande #{self.planning_order_id}"
