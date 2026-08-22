@@ -11,6 +11,7 @@ class PackageSerializer(serializers.ModelSerializer):
     color_name = serializers.CharField(source="color.name", read_only=True, default="")
     planning_order_reference = serializers.CharField(source="planning_order.product_reference", read_only=True, default="")
     created_by_name = serializers.CharField(source="created_by.full_name", read_only=True, default="")
+    verified_by_name = serializers.CharField(source="verified_by.full_name", read_only=True, default="")
 
     class Meta:
         model = Package
@@ -22,6 +23,7 @@ class PackageSerializer(serializers.ModelSerializer):
             "color", "color_name", "color_reference_snapshot", "colorant_consumed_kg",
             "supplier", "production_started_at", "production_finished_at",
             "personnel_snapshot", "notes", "shipped_at", "shipped_to",
+            "verified_at", "verified_by", "verified_by_name",
             "created_by", "created_by_name", "created_at", "updated_at",
         )
         read_only_fields = (
@@ -29,6 +31,7 @@ class PackageSerializer(serializers.ModelSerializer):
             "raw_material_reference_snapshot", "raw_material_consumed_kg",
             "color_reference_snapshot", "colorant_consumed_kg",
             "personnel_snapshot", "shipped_at", "shipped_to",
+            "verified_at", "verified_by", "verified_by_name",
             "created_by", "created_by_name", "created_at", "updated_at",
         )
 

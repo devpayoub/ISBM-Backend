@@ -20,6 +20,11 @@ from .services import resolve_personnel
 
 # plan.md §2: Package/Bag traceability is an Admin capability.
 MANAGE_ROLES = ("ADMIN", "MANAGER")
+# Physically checking a bag's contents against its recorded count is a
+# Controller task (mirrors the Contrôle préventif page's CONTROLLER-run
+# checks) — Admin/Manager can also verify for oversight, same pattern as
+# apps.maintenance's confirm action (IsAdmin | IsAdminOrManager | IsController).
+VERIFY_ROLES = ("ADMIN", "MANAGER", "CONTROLLER")
 
 
 def _snapshot_reference(stock_item):
@@ -173,6 +178,64 @@ class PackageViewSet(viewsets.ModelViewSet):
         pkg.save(update_fields=["shipped_at", "shipped_to"])
         log_activity(request.user, "package.shipped", "Package", pkg.pk, f"{pkg.reference} → {shipped_to or 'destinataire non précisé'}")
         return Response(PackageSerializer(pkg).data)
+
+    @action(detail=True, methods=["post"])
+    def verify(self, request, pk=None):
+        """Controller sign-off that this bag's actual, physically-counted
+        contents match its recorded bottle_count. One-way, like ship()
+        above — a bag is verified once; re-verifying is rejected rather
+        than silently re-stamping a new timestamp/user."""
+        if request.user.role not in VERIFY_ROLES:
+            raise PermissionDenied("Rôle insuffisant pour vérifier un sac.")
+        pkg = self.get_object()
+        if pkg.verified_at:
+            raise ValidationError(f"Ce sac a déjà été vérifié le {pkg.verified_at:%Y-%m-%d %H:%M}.")
+        pkg.verified_at = timezone.now()
+        pkg.verified_by = request.user
+        pkg.save(update_fields=["verified_at", "verified_by"])
+        log_activity(request.user, "package.verified", "Package", pkg.pk, pkg.reference)
+        return Response(PackageSerializer(pkg).data)
+
+    @action(detail=False, methods=["get"], url_path="order-progress")
+    def order_progress(self, request):
+        """What a Controller needs for the "how many bottles does this
+        machine still need to make, and which bags are verified yet"
+        question: every active order's target quantity (PlanningOrder.
+        quantity) against what's actually been bagged so far (sum of its
+        linked Package.bottle_count), plus each bag's verification state.
+        Read-only aggregate, recomputed on every call — no new stored
+        totals to keep in sync, same convention as Planning's schedule."""
+        from apps.planning.models import PlanningOrder, PlanningOrderStatus
+
+        orders = (
+            PlanningOrder.objects.filter(status__in=(PlanningOrderStatus.QUEUED, PlanningOrderStatus.IN_PROGRESS))
+            .select_related("machine", "bottle")
+            .prefetch_related("packages__verified_by")
+            .order_by("machine__code", "id")
+        )
+        result = []
+        for order in orders:
+            packages = list(order.packages.all().order_by("-production_started_at"))
+            produced = sum(p.bottle_count for p in packages)
+            result.append({
+                "order_id": order.id,
+                "product_reference": order.product_reference,
+                "machine_id": order.machine_id,
+                "machine_code": order.machine.code,
+                "bottle_category": order.bottle.category if order.bottle else "",
+                "target_quantity": order.quantity,
+                "produced_quantity": produced,
+                "packages": [
+                    {
+                        "id": p.id, "reference": p.reference, "bottle_count": p.bottle_count,
+                        "production_started_at": p.production_started_at,
+                        "verified_at": p.verified_at,
+                        "verified_by_name": p.verified_by.full_name if p.verified_by else "",
+                    }
+                    for p in packages
+                ],
+            })
+        return Response(result)
 
     @action(detail=False, methods=["get"])
     def summary(self, request):

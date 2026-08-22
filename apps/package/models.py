@@ -66,6 +66,17 @@ class Package(models.Model):
     shipped_at = models.DateTimeField(null=True, blank=True)
     shipped_to = models.CharField(max_length=150, blank=True, default="")
 
+    # Controller sign-off that this bag's actual contents were physically
+    # checked and match its recorded bottle_count — a one-way transition
+    # (mirrors shipped_at above and Ticket's status moves), set only via
+    # PackageViewSet.verify(). Never required before shipping; it's a
+    # traceability confirmation, not a gate.
+    verified_at = models.DateTimeField(null=True, blank=True)
+    verified_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL,
+        null=True, blank=True, related_name="verified_packages",
+    )
+
     production_started_at = models.DateTimeField()
     production_finished_at = models.DateTimeField(null=True, blank=True)
 
