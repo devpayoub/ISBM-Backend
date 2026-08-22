@@ -1,37 +1,25 @@
 from collections import defaultdict
 from datetime import timedelta
-from decimal import Decimal
 
 from django.utils import timezone
 
-from apps.catalog.models import RecipeComponentType
+from apps.stock.services import raw_and_colorant_requirement
 
 from .models import PlanningOrder, PlanningOrderStatus
 
-_RAW_TYPES = (RecipeComponentType.BOTTLE_RAW, RecipeComponentType.CAP_RAW)
-_COLORANT_TYPES = (RecipeComponentType.BOTTLE_COLORANT, RecipeComponentType.CAP_COLORANT)
-
 
 def _order_requirement(order):
-    """This order's raw material / colorant requirement (body+cap combined
-    per stock_item, same combining rule used everywhere else in this
-    codebase) — the per-order building block simulate_stock_sequence()
-    walks over. None if the order has no linked bottle recipe."""
-    bottle = order.bottle
-    if not bottle:
+    """This order's raw material / colorant requirement — the per-order
+    building block simulate_stock_sequence() walks over. None if the order
+    has no linked bottle recipe. Delegates to the shared
+    apps.stock.services.raw_and_colorant_requirement() so Planning and
+    Package always agree on how much a given recipe+quantity actually
+    needs."""
+    if not order.bottle:
         return None
-    components = list(bottle.components.select_related("stock_item").all())
-    raw = [c for c in components if c.component_type in _RAW_TYPES]
-    colorant = [c for c in components if c.component_type in _COLORANT_TYPES]
-    raw_item = raw[0].stock_item if raw else None
-    raw_kg = sum((c.qty_per_unit_g for c in raw), Decimal("0")) * order.quantity / Decimal("1000")
-    colorant_item = colorant[0].stock_item if colorant else None
-    colorant_kg = (
-        sum((c.qty_per_unit_g for c in colorant), Decimal("0")) * order.quantity / Decimal("1000")
-        if colorant else None
-    )
+    raw_item, raw_kg, colorant_item, colorant_kg = raw_and_colorant_requirement(order.bottle, order.quantity)
     return {
-        "bottle": bottle, "raw_item": raw_item, "raw_kg": raw_kg,
+        "bottle": order.bottle, "raw_item": raw_item, "raw_kg": raw_kg,
         "colorant_item": colorant_item, "colorant_kg": colorant_kg,
     }
 

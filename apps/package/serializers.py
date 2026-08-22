@@ -9,12 +9,14 @@ class PackageSerializer(serializers.ModelSerializer):
     bottle_category = serializers.CharField(source="bottle.category", read_only=True, default="")
     raw_material_name = serializers.CharField(source="raw_material.name", read_only=True, default="")
     color_name = serializers.CharField(source="color.name", read_only=True, default="")
+    planning_order_reference = serializers.CharField(source="planning_order.product_reference", read_only=True, default="")
     created_by_name = serializers.CharField(source="created_by.full_name", read_only=True, default="")
 
     class Meta:
         model = Package
         fields = (
             "id", "reference", "machine", "machine_code", "machine_name",
+            "planning_order", "planning_order_reference",
             "bottle", "bottle_category", "bottle_count",
             "raw_material", "raw_material_name", "raw_material_reference_snapshot", "raw_material_consumed_kg",
             "color", "color_name", "color_reference_snapshot", "colorant_consumed_kg",

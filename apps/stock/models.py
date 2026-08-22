@@ -63,9 +63,23 @@ class StockMovementType(models.TextChoices):
     ADJUSTMENT = "ADJUSTMENT", "Ajustement"
 
 
+class StockMovementSourceType(models.TextChoices):
+    # Consumption tied to a PlanningOrder — whichever of Package (today) or
+    # a validated Production entry (future) triggers it first, source_id is
+    # always the order's id, so the second one is a guaranteed no-op.
+    PLANNING_ORDER = "PLANNING_ORDER", "Commande de planning"
+    # Ad-hoc bag with no linked order — source_id is the Package's own id.
+    PACKAGE = "PACKAGE", "Sac (sans commande)"
+
+
 class StockMovement(models.Model):
     """Append-only quantity history — copies apps.support.TicketStatusLog's
-    shape/discipline (never edited or deleted, one row per change)."""
+    shape/discipline (never edited or deleted, one row per change).
+    source_type/source_id (optional — only set for automatic consumption,
+    not for manual receipts/adjustments) is what guarantees the same
+    production never consumes stock twice: the partial unique constraint
+    below rejects a second CONSUMPTION row for the same
+    (source_type, source_id, stock_item)."""
 
     stock_item = models.ForeignKey(StockItem, on_delete=models.CASCADE, related_name="movements")
     type = models.CharField(max_length=20, choices=StockMovementType.choices)
@@ -73,6 +87,8 @@ class StockMovement(models.Model):
     quantity_before = models.DecimalField(max_digits=12, decimal_places=3)
     quantity_after = models.DecimalField(max_digits=12, decimal_places=3)
     reason = models.CharField(max_length=300, blank=True, default="")
+    source_type = models.CharField(max_length=20, choices=StockMovementSourceType.choices, blank=True, default="")
+    source_id = models.PositiveIntegerField(null=True, blank=True)
     created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -80,6 +96,13 @@ class StockMovement(models.Model):
         verbose_name = "Mouvement de stock"
         verbose_name_plural = "Mouvements de stock"
         ordering = ["created_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["source_type", "source_id", "stock_item", "type"],
+                condition=models.Q(source_type__gt="") & models.Q(source_id__isnull=False),
+                name="unique_stock_movement_per_source",
+            ),
+        ]
 
     def __str__(self) -> str:
         return f"{self.get_type_display()} {self.delta} — {self.stock_item.reference}"

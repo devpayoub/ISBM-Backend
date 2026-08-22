@@ -22,6 +22,17 @@ class Package(models.Model):
 
     bottle_count = models.PositiveIntegerField()
 
+    # Optional link to the order this bag fulfills — when set, stock
+    # consumption is keyed to the ORDER (source_type=PLANNING_ORDER,
+    # source_id=planning_order.id) instead of this bag, so a second bag
+    # against the same order — or a future Production-entry validation for
+    # it — never double-consumes. SET_NULL on delete: a permanent
+    # traceability record must survive its order being removed.
+    planning_order = models.ForeignKey(
+        "planning.PlanningOrder", on_delete=models.SET_NULL,
+        null=True, blank=True, related_name="packages",
+    )
+
     # Which bottle recipe (plan.md §10 characteristics) this bag was made
     # from — supplies the per-bottle grams used to auto-calculate and
     # auto-deduct stock consumption below. Optional: a bag can still be

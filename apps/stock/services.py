@@ -2,18 +2,27 @@ from collections import defaultdict
 from dataclasses import dataclass
 from decimal import Decimal
 
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.db.models import Sum
 from rest_framework.exceptions import ValidationError
 
 from .models import StockItem, StockMovement, StockReservation
 
 
-def apply_movement(item: StockItem, movement_type: str, delta, reason: str, user) -> StockMovement:
+def apply_movement(
+    item: StockItem, movement_type: str, delta, reason: str, user,
+    source_type: str = "", source_id: int | None = None,
+) -> StockMovement:
     """Single chokepoint for every stock quantity change — used by
     StockItemViewSet.move() directly, and by apps.package to auto-consume
     raw material/colorant when a bag is created. Never allows the
-    resulting quantity to go negative."""
+    resulting quantity to go negative. source_type/source_id are optional
+    (plain manual receipts/adjustments don't set them) — when given, the
+    partial unique constraint on StockMovement guarantees this exact
+    source+item+type combination can never be recorded twice; prefer
+    apply_movement_idempotent() below over calling this directly with a
+    source, since that one turns the resulting IntegrityError into a
+    graceful no-op instead of a crash."""
     quantity_before = item.quantity
     quantity_after = quantity_before + delta
     if quantity_after < 0:
@@ -27,9 +36,63 @@ def apply_movement(item: StockItem, movement_type: str, delta, reason: str, user
         movement = StockMovement.objects.create(
             stock_item=item, type=movement_type, delta=delta,
             quantity_before=quantity_before, quantity_after=quantity_after,
-            reason=reason, created_by=user,
+            reason=reason, created_by=user, source_type=source_type, source_id=source_id,
         )
     return movement
+
+
+def apply_movement_idempotent(
+    item: StockItem, movement_type: str, delta, reason: str, user,
+    source_type: str, source_id: int,
+):
+    """Consumption path for anything that must never double-charge stock
+    for the same production event (Package auto-consumption today,
+    Production-entry validation once that exists in a later phase) — the
+    same (source_type, source_id, stock_item, type) can only ever produce
+    one movement. Checks first for the common case, then falls back to
+    catching the unique-constraint violation for the rare race between two
+    near-simultaneous requests for the same source. Returns
+    (movement, created) — created=False means this exact source was
+    already recorded and nothing changed on this call."""
+    existing = StockMovement.objects.filter(
+        stock_item=item, type=movement_type, source_type=source_type, source_id=source_id,
+    ).first()
+    if existing:
+        return existing, False
+    try:
+        movement = apply_movement(item, movement_type, delta, reason, user, source_type=source_type, source_id=source_id)
+        return movement, True
+    except IntegrityError:
+        return StockMovement.objects.get(
+            stock_item=item, type=movement_type, source_type=source_type, source_id=source_id,
+        ), False
+
+
+def raw_and_colorant_requirement(bottle, quantity):
+    """Aggregate a bottle recipe's requirement into the two pools every
+    consumer actually cares about — raw material and colorant — combining
+    body+cap per stock_item (RecipeComponent's finer BOTTLE_RAW/CAP_RAW/etc.
+    split is for display; anything that deducts or checks stock wants the
+    combined total). Returns (raw_item, raw_kg, colorant_item, colorant_kg)
+    — colorant_item/colorant_kg are None if the recipe has no colorant.
+    Shared by Planning's schedule simulation and Package's auto-consumption
+    so both draw the same amount for the same recipe+quantity."""
+    from apps.catalog.models import RecipeComponentType
+
+    raw_types = (RecipeComponentType.BOTTLE_RAW, RecipeComponentType.CAP_RAW)
+    colorant_types = (RecipeComponentType.BOTTLE_COLORANT, RecipeComponentType.CAP_COLORANT)
+    components = list(bottle.components.select_related("stock_item").all())
+    raw = [c for c in components if c.component_type in raw_types]
+    colorant = [c for c in components if c.component_type in colorant_types]
+
+    raw_item = raw[0].stock_item if raw else None
+    raw_kg = sum((c.qty_per_unit_g for c in raw), Decimal("0")) * quantity / Decimal("1000")
+    colorant_item = colorant[0].stock_item if colorant else None
+    colorant_kg = (
+        sum((c.qty_per_unit_g for c in colorant), Decimal("0")) * quantity / Decimal("1000")
+        if colorant else None
+    )
+    return raw_item, raw_kg, colorant_item, colorant_kg
 
 
 @dataclass

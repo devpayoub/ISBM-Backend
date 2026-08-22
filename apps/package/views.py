@@ -1,5 +1,3 @@
-from decimal import Decimal
-
 from django.db import transaction
 from django.db.models import Count, Sum
 from django.utils import timezone
@@ -13,8 +11,8 @@ from rest_framework.response import Response
 
 from apps.audit.services import log_activity
 from apps.machines.models import Machine
-from apps.stock.models import StockMovementType
-from apps.stock.services import apply_movement
+from apps.stock.models import StockMovementSourceType, StockMovementType
+from apps.stock.services import apply_movement_idempotent, raw_and_colorant_requirement
 
 from .models import Package
 from .serializers import PackageSerializer
@@ -61,6 +59,7 @@ class PackageViewSet(viewsets.ModelViewSet):
         raw_material = vd.get("raw_material")
         color = vd.get("color")
         bottle_count = vd["bottle_count"]
+        planning_order = vd.get("planning_order")
 
         # Auto-consume stock (the "how much do I still need" calculation the
         # user asked for): if a bottle recipe is linked, deduct exactly what
@@ -68,6 +67,13 @@ class PackageViewSet(viewsets.ModelViewSet):
         # transaction with the Package insert — if either deduction would go
         # negative, apply_movement raises and the whole bag creation rolls
         # back, so a bag is never recorded without the stock to back it.
+        #
+        # Idempotency key: when this bag fulfills an order, consumption is
+        # keyed to that ORDER (source_id=planning_order.id) rather than the
+        # bag itself — so a second bag against the same order, or a future
+        # validated Production entry for it (once that exists), can never
+        # double-consume; whichever happens first "wins" and the rest are
+        # no-ops. Unlinked bags keep today's behavior, keyed to themselves.
         with transaction.atomic():
             obj = serializer.save(
                 created_by=self.request.user,
@@ -76,17 +82,29 @@ class PackageViewSet(viewsets.ModelViewSet):
                 personnel_snapshot=resolve_personnel(machine, started, finished),
             )
             if bottle:
+                raw_item, raw_kg, colorant_item, colorant_kg = raw_and_colorant_requirement(bottle, bottle_count)
+                if planning_order:
+                    source_type, source_id = StockMovementSourceType.PLANNING_ORDER, planning_order.id
+                else:
+                    source_type, source_id = StockMovementSourceType.PACKAGE, obj.id
+
                 update_fields = []
-                if raw_material and bottle.raw_material_qty_g:
-                    raw_kg = (bottle.raw_material_qty_g * bottle_count) / Decimal("1000")
-                    apply_movement(raw_material, StockMovementType.CONSUMPTION, -raw_kg, f"Sac {obj.reference}", self.request.user)
-                    obj.raw_material_consumed_kg = raw_kg
-                    update_fields.append("raw_material_consumed_kg")
-                if color and bottle.colorant_qty_g:
-                    color_kg = (bottle.colorant_qty_g * bottle_count) / Decimal("1000")
-                    apply_movement(color, StockMovementType.CONSUMPTION, -color_kg, f"Sac {obj.reference}", self.request.user)
-                    obj.colorant_consumed_kg = color_kg
-                    update_fields.append("colorant_consumed_kg")
+                if raw_material and raw_item and raw_kg:
+                    _, created = apply_movement_idempotent(
+                        raw_material, StockMovementType.CONSUMPTION, -raw_kg, f"Sac {obj.reference}",
+                        self.request.user, source_type=source_type, source_id=source_id,
+                    )
+                    if created:
+                        obj.raw_material_consumed_kg = raw_kg
+                        update_fields.append("raw_material_consumed_kg")
+                if color and colorant_item and colorant_kg:
+                    _, created = apply_movement_idempotent(
+                        color, StockMovementType.CONSUMPTION, -colorant_kg, f"Sac {obj.reference}",
+                        self.request.user, source_type=source_type, source_id=source_id,
+                    )
+                    if created:
+                        obj.colorant_consumed_kg = colorant_kg
+                        update_fields.append("colorant_consumed_kg")
                 if update_fields:
                     obj.save(update_fields=update_fields)
         log_activity(self.request.user, "package.created", "Package", obj.pk, obj.reference)
