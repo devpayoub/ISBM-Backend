@@ -46,9 +46,10 @@ class PlanningOrder(models.Model):
     machine/mold, and in what sequence. Distinct from ProductionPlan (which
     tracks target-vs-actual BPH for a date/machine/product, used by the
     existing 'Écarts' page): this is the order queue that
-    services.calculate_schedule() sequences and times. Estimated start/
-    finish are always computed on read, never stored, so reprioritizing
-    never leaves stale numbers behind."""
+    services.calculate_schedule() sequences and times. Sequence is always
+    automatic (Meta.ordering — requested_start, then creation order), never
+    a manually-set number; estimated start/finish are always computed on
+    read, never stored, so nothing ever goes stale."""
 
     machine = models.ForeignKey("machines.Machine", on_delete=models.PROTECT, related_name="planning_orders")
     mold = models.ForeignKey(
@@ -69,10 +70,6 @@ class PlanningOrder(models.Model):
         default=0, help_text="Temps de changement de moule requis avant cette commande, si le moule diffère de la précédente",
     )
 
-    # Lower = more urgent — v1 is an explicit field + reorder via plain
-    # PATCH rather than a full priority-solver (plan.md §7: "should be
-    # configurable business logic", not a single hard-coded rule).
-    priority = models.IntegerField(default=100)
     requested_start = models.DateTimeField(null=True, blank=True)
     status = models.CharField(max_length=20, choices=PlanningOrderStatus.choices, default=PlanningOrderStatus.QUEUED)
 
@@ -87,7 +84,11 @@ class PlanningOrder(models.Model):
     class Meta:
         verbose_name = "Commande de planning"
         verbose_name_plural = "Commandes de planning"
-        ordering = ["machine", "priority", "id"]
+        # Automatic sequencing, no manual priority knob: orders with a
+        # requested start go in that order (Postgres puts NULLs last on
+        # ascending order by default), everything else falls back to
+        # creation order — first queued, first produced.
+        ordering = ["machine", "requested_start", "id"]
 
     def __str__(self) -> str:
         return f"{self.product_reference or 'Commande'} × {self.quantity} — {self.machine_id}"

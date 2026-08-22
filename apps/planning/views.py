@@ -75,7 +75,7 @@ class PlanningOrderViewSet(viewsets.ModelViewSet):
     permission_classes = (IsAuthenticated,)
     filterset_fields = ("machine", "status", "mold")
     search_fields = ("product_reference", "color", "notes")
-    ordering = ["machine", "priority", "id"]
+    ordering = ["machine", "requested_start", "id"]
 
     def perform_create(self, serializer):
         if self.request.user.role not in MANAGE_ROLES:

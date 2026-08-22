@@ -26,7 +26,7 @@ class PlanningOrderSerializer(serializers.ModelSerializer):
         fields = (
             "id", "machine", "machine_code", "mold", "mold_name", "mold_reference",
             "bottle", "bottle_category", "product_reference", "color", "color_formulation",
-            "quantity", "time_per_bottle_sec", "mold_change_min", "priority",
+            "quantity", "time_per_bottle_sec", "mold_change_min",
             "requested_start", "status", "notes",
             "created_by", "created_by_name", "created_at", "updated_at",
         )

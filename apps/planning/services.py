@@ -65,11 +65,13 @@ def _material_check(order):
 
 def calculate_schedule(machine=None):
     """Sequence + timing for the order queue (plan.md §7): grouped by
-    machine, ordered by priority then id (stable tie-break — bumping an
-    order to the front of its machine's queue is just giving it a lower
-    priority number than the rest). Each job's start is the previous job's
-    finish on that machine; mold-change time is only added when the mold
-    actually differs from the previous job's, not on every job.
+    machine, ordered automatically — requested_start first (Postgres puts
+    NULLs last on ascending order), then id as a FIFO tie-break/fallback for
+    orders with no specific date. No manual priority number: to bump an
+    order forward, give it an earlier requested_start (or none, to queue it
+    by creation order). Each job's start is the previous job's finish on
+    that machine; mold-change time is only added when the mold actually
+    differs from the previous job's, not on every job.
     `production_time = quantity × time_per_bottle`, normalized to minutes."""
     qs = PlanningOrder.objects.filter(status=PlanningOrderStatus.QUEUED).select_related(
         "machine", "mold", "bottle", "bottle__raw_material", "bottle__colorant",
@@ -78,7 +80,7 @@ def calculate_schedule(machine=None):
         qs = qs.filter(machine=machine)
 
     by_machine = defaultdict(list)
-    for order in qs.order_by("machine_id", "priority", "id"):
+    for order in qs.order_by("machine_id", "requested_start", "id"):
         by_machine[order.machine_id].append(order)
 
     results = []
@@ -105,7 +107,6 @@ def calculate_schedule(machine=None):
                 "product_reference": order.product_reference,
                 "color": order.color,
                 "quantity": order.quantity,
-                "priority": order.priority,
                 "mold_change_min": mold_change,
                 "production_time_min": round(production_min, 1),
                 "estimated_start": start.isoformat(),
