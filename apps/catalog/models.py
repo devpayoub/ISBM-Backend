@@ -46,3 +46,37 @@ class BottleCharacteristic(models.Model):
 
     def __str__(self) -> str:
         return f"{self.category} ({self.reference or '—'})"
+
+
+class RecipeComponentType(models.TextChoices):
+    BOTTLE_RAW = "BOTTLE_RAW", "Matière première bouteille"
+    BOTTLE_COLORANT = "BOTTLE_COLORANT", "Colorant bouteille"
+    CAP_RAW = "CAP_RAW", "Matière première bouchon"
+    CAP_COLORANT = "CAP_COLORANT", "Colorant bouchon"
+
+
+class RecipeComponent(models.Model):
+    """Normalized breakout of BottleCharacteristic's recipe — one row per
+    material a bottle actually consumes. Kept in sync with
+    BottleCharacteristic's raw_material_qty_g/colorant_qty_g/bouchant_*_qty_g
+    fields by apps.catalog.services.sync_recipe_components() (called on
+    every create/update from the view — those denormalized fields stay the
+    edit surface, this table is the read surface). This is what
+    apps.stock.services.calculate_material_requirements() reads, so every
+    consumer (Planning, Package, Catalog capacity, Production validation,
+    Dashboard) computes requirements the same single way instead of each
+    re-deriving grams-per-bottle math independently."""
+
+    recipe = models.ForeignKey(BottleCharacteristic, on_delete=models.CASCADE, related_name="components")
+    component_type = models.CharField(max_length=20, choices=RecipeComponentType.choices)
+    stock_item = models.ForeignKey("stock.StockItem", on_delete=models.PROTECT, related_name="recipe_components")
+    qty_per_unit_g = models.DecimalField(max_digits=10, decimal_places=3)
+
+    class Meta:
+        verbose_name = "Composant de recette"
+        verbose_name_plural = "Composants de recette"
+        unique_together = [("recipe", "component_type")]
+        ordering = ["recipe", "component_type"]
+
+    def __str__(self) -> str:
+        return f"{self.recipe.category} — {self.component_type}: {self.qty_per_unit_g} g"

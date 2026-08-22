@@ -4,33 +4,41 @@ from decimal import Decimal
 
 from django.utils import timezone
 
+from apps.catalog.models import RecipeComponentType
+from apps.stock.services import calculate_material_requirements
+
 from .models import PlanningOrder, PlanningOrderStatus
+
+_RAW_TYPES = (RecipeComponentType.BOTTLE_RAW, RecipeComponentType.CAP_RAW)
+_COLORANT_TYPES = (RecipeComponentType.BOTTLE_COLORANT, RecipeComponentType.CAP_COLORANT)
 
 
 def _material_check(order):
     """How much raw material/colorant this order needs vs. what's on hand
-    right now (the user's "how much still how I need to add" ask) — only
-    computed when the order has a linked bottle recipe (plan.md §10), since
-    that's what supplies the per-bottle grams. Body + bouchant quantities
-    share the same StockItem references on BottleCharacteristic, so they're
-    summed before converting to kg."""
+    right now — only computed when the order has a linked bottle recipe,
+    since that's what supplies the per-bottle grams. Delegates to the
+    central apps.stock.services.calculate_material_requirements() (single
+    source of truth, also used by Catalog capacity and Package
+    auto-consumption) instead of re-deriving the grams-per-bottle math."""
     bottle = order.bottle
     if not bottle:
         return None
-    qty = order.quantity
 
-    raw_required_kg = (bottle.raw_material_qty_g + bottle.bouchant_raw_material_qty_g) * qty / Decimal("1000")
-    raw_available_kg = bottle.raw_material.quantity
-    raw_ok = raw_available_kg >= raw_required_kg
+    rows = calculate_material_requirements(bottle, order.quantity)
+    raw_rows = [r for r in rows if r.component_type in _RAW_TYPES]
+    colorant_rows = [r for r in rows if r.component_type in _COLORANT_TYPES]
+
+    raw_required_kg = sum((r.required_qty_kg for r in raw_rows), Decimal("0"))
+    raw_available_kg = raw_rows[0].available_stock_kg if raw_rows else Decimal("0")
+    raw_ok = raw_rows[0].status != "INSUFFICIENT" if raw_rows else True
 
     colorant_required_kg = None
     colorant_available_kg = None
     colorant_ok = True
-    colorant_qty_g = bottle.colorant_qty_g + bottle.bouchant_colorant_qty_g
-    if bottle.colorant and colorant_qty_g:
-        colorant_required_kg = colorant_qty_g * qty / Decimal("1000")
-        colorant_available_kg = bottle.colorant.quantity
-        colorant_ok = colorant_available_kg >= colorant_required_kg
+    if colorant_rows:
+        colorant_required_kg = sum((r.required_qty_kg for r in colorant_rows), Decimal("0"))
+        colorant_available_kg = colorant_rows[0].available_stock_kg
+        colorant_ok = colorant_rows[0].status != "INSUFFICIENT"
 
     return {
         "bottle": bottle.id,

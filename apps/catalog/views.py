@@ -9,7 +9,7 @@ from apps.audit.services import log_activity
 
 from .models import BottleCharacteristic
 from .serializers import BottleCharacteristicSerializer
-from .services import max_producible
+from .services import max_producible, sync_recipe_components
 
 # Same capability shape as Stock (plan.md §10 is an Admin-owned reference
 # table; Planning/Package read it later, they don't manage it).
@@ -29,12 +29,14 @@ class BottleCharacteristicViewSet(viewsets.ModelViewSet):
         if self.request.user.role not in MANAGE_ROLES:
             raise PermissionDenied("Rôle insuffisant pour créer une caractéristique bouteille.")
         obj = serializer.save()
+        sync_recipe_components(obj)
         log_activity(self.request.user, "bottle_characteristic.created", "BottleCharacteristic", obj.pk, obj.category)
 
     def perform_update(self, serializer):
         if self.request.user.role not in MANAGE_ROLES:
             raise PermissionDenied("Rôle insuffisant pour modifier une caractéristique bouteille.")
         obj = serializer.save()
+        sync_recipe_components(obj)
         log_activity(self.request.user, "bottle_characteristic.updated", "BottleCharacteristic", obj.pk, obj.category)
 
     def perform_destroy(self, instance):
