@@ -134,22 +134,47 @@ def _reserved_totals(stock_item_ids, exclude_order=None) -> dict:
     return {row["stock_item_id"]: row["total"] for row in rows}
 
 
+def remaining_quantity_for_order(order) -> int:
+    """How many of this order's bottles are still unaccounted for by
+    validated production — order.quantity minus whatever's already been
+    validated (VALIDATED or STOCK_CONSUMED) against it via ProductionEntry.
+    Used to size reservations/material-checks down as an order is partially
+    fulfilled, instead of always reserving for the full original quantity.
+    Local import: apps.production isn't a module-level dependency of
+    apps.stock, matching the apps.planning.models import pattern below."""
+    from apps.production.models import ProductionEntry, ProductionEntryStatus
+
+    produced = ProductionEntry.objects.filter(
+        planning_order=order,
+        status__in=(ProductionEntryStatus.VALIDATED, ProductionEntryStatus.STOCK_CONSUMED),
+    ).aggregate(total=Sum("bottles_produced"))["total"] or 0
+    return max(order.quantity - produced, 0)
+
+
 def sync_reservations_for_order(order) -> None:
     """Recompute one PlanningOrder's reservations from scratch — delete then
     recreate, matching the "always recomputed, never hand-edited" convention
     used everywhere else in this codebase. Call on every PlanningOrder
-    create/update (destroy is handled by StockReservation's CASCADE FK).
-    Clears reservations entirely for an order with no recipe or that isn't
-    QUEUED — only a queued order still competing for physical stock should
-    hold one."""
+    create/update (destroy is handled by StockReservation's CASCADE FK) and
+    after every ProductionEntry validation against the order. Clears
+    reservations entirely for an order with no recipe, one that's DONE/
+    CANCELLED, or once nothing remains unproduced — QUEUED and IN_PROGRESS
+    orders still competing for physical stock hold one, sized to what's
+    left to produce (not the original full quantity), so material already
+    validated/consumed via Phase 5 production entries stops being reserved
+    on top of being consumed."""
     from apps.planning.models import PlanningOrderStatus
 
     StockReservation.objects.filter(planning_order=order).delete()
-    if not order.bottle or order.status != PlanningOrderStatus.QUEUED:
+    if not order.bottle or order.status not in (PlanningOrderStatus.QUEUED, PlanningOrderStatus.IN_PROGRESS):
+        return
+
+    remaining = remaining_quantity_for_order(order)
+    if remaining <= 0:
         return
 
     for component in order.bottle.components.all():
-        qty_kg = (component.qty_per_unit_g * order.quantity) / Decimal("1000")
+        qty_kg = (component.qty_per_unit_g * remaining) / Decimal("1000")
         StockReservation.objects.create(
             planning_order=order, stock_item=component.stock_item,
             component_type=component.component_type, quantity=qty_kg,

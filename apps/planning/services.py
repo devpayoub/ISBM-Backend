@@ -3,21 +3,46 @@ from datetime import timedelta
 
 from django.utils import timezone
 
-from apps.stock.services import raw_and_colorant_requirement
+from apps.stock.services import raw_and_colorant_requirement, remaining_quantity_for_order, sync_reservations_for_order
 
 from .models import PlanningOrder, PlanningOrderStatus
+
+
+def advance_order_after_production(order) -> None:
+    """Called after a ProductionEntry linked to `order` is validated
+    (Phase 5). Moves QUEUED → IN_PROGRESS on the first validation, and on
+    to DONE once nothing remains unproduced (remaining_quantity_for_order
+    hits zero) — then resyncs the order's reservation to match, since a
+    partially-produced order should only keep reserving what's left, and a
+    finished one shouldn't reserve anything at all."""
+    if order.status == PlanningOrderStatus.CANCELLED or order.status == PlanningOrderStatus.DONE:
+        return
+    remaining = remaining_quantity_for_order(order)
+    if remaining <= 0:
+        order.status = PlanningOrderStatus.DONE
+        order.save(update_fields=["status"])
+    elif order.status == PlanningOrderStatus.QUEUED:
+        order.status = PlanningOrderStatus.IN_PROGRESS
+        order.save(update_fields=["status"])
+    sync_reservations_for_order(order)
 
 
 def _order_requirement(order):
     """This order's raw material / colorant requirement — the per-order
     building block simulate_stock_sequence() walks over. None if the order
-    has no linked bottle recipe. Delegates to the shared
+    has no linked bottle recipe, or if it's already fully produced (Phase 5:
+    remaining_quantity_for_order nets out whatever's been validated via
+    ProductionEntry). Delegates to the shared
     apps.stock.services.raw_and_colorant_requirement() so Planning and
     Package always agree on how much a given recipe+quantity actually
-    needs."""
+    needs — sized to what's still outstanding, not the order's original
+    full quantity."""
     if not order.bottle:
         return None
-    raw_item, raw_kg, colorant_item, colorant_kg = raw_and_colorant_requirement(order.bottle, order.quantity)
+    remaining = remaining_quantity_for_order(order)
+    if remaining <= 0:
+        return None
+    raw_item, raw_kg, colorant_item, colorant_kg = raw_and_colorant_requirement(order.bottle, remaining)
     return {
         "bottle": order.bottle, "raw_item": raw_item, "raw_kg": raw_kg,
         "colorant_item": colorant_item, "colorant_kg": colorant_kg,

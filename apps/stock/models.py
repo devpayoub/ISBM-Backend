@@ -64,12 +64,21 @@ class StockMovementType(models.TextChoices):
 
 
 class StockMovementSourceType(models.TextChoices):
-    # Consumption tied to a PlanningOrder — whichever of Package (today) or
-    # a validated Production entry (future) triggers it first, source_id is
-    # always the order's id, so the second one is a guaranteed no-op.
+    # A Package bag linked to an order consumes the order's FULL recipe
+    # requirement in one shot — source_id is the order's id, so a second
+    # bag linked to the same order is a guaranteed no-op (Phase 4).
     PLANNING_ORDER = "PLANNING_ORDER", "Commande de planning"
     # Ad-hoc bag with no linked order — source_id is the Package's own id.
     PACKAGE = "PACKAGE", "Sac (sans commande)"
+    # A validated hourly ProductionEntry linked to an order — source_id is
+    # the ENTRY's id (not the order's), so multiple hours of partial
+    # production against the same order each consume their own share
+    # instead of colliding on one key (Phase 5). Consuming via Package
+    # (whole-order, one-shot) and via ProductionEntry (incremental,
+    # per-hour) for the *same* order are two independent workflows — pick
+    # one per order in practice, since nothing here reconciles double
+    # consumption across both paths.
+    PRODUCTION_ENTRY = "PRODUCTION_ENTRY", "Saisie de production"
 
 
 class StockMovement(models.Model):

@@ -17,11 +17,40 @@ def _shift_for_hour(hour: int) -> str:
     return Shift.NIGHT
 
 
+class ProductionEntryStatus(models.TextChoices):
+    DRAFT = "DRAFT", "Brouillon"
+    # Locked in, no linked recipe (or nothing to consume) — nothing deducted.
+    VALIDATED = "VALIDATED", "Validée"
+    # Locked in AND its recipe requirement was deducted from stock.
+    STOCK_CONSUMED = "STOCK_CONSUMED", "Stock consommé"
+
+
 class ProductionEntry(models.Model):
     date = models.DateField()
     hour = models.PositiveSmallIntegerField(help_text="Créneau horaire 1-24")
     machine = models.ForeignKey("machines.Machine", on_delete=models.PROTECT, related_name="production_entries")
     shift = models.CharField(max_length=20, choices=Shift.choices, blank=True, default="")
+
+    # Optional link to the order this hour's production counts against
+    # (plan.md Phase 5) — set while still DRAFT, then "Valider" locks the
+    # entry and, if a recipe is present, consumes stock for it. SET_NULL on
+    # delete: the entry is a permanent historical record even if its order
+    # is later removed.
+    planning_order = models.ForeignKey(
+        "planning.PlanningOrder", on_delete=models.SET_NULL,
+        null=True, blank=True, related_name="production_entries",
+    )
+    status = models.CharField(max_length=20, choices=ProductionEntryStatus.choices, default=ProductionEntryStatus.DRAFT)
+    validated_at = models.DateTimeField(null=True, blank=True)
+    validated_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL,
+        null=True, blank=True, related_name="validated_production_entries",
+    )
+    # Immutable — set once at validation time from the linked order's
+    # recipe × bottles_produced, kept even if the recipe changes later
+    # (mirrors apps.package.Package.raw_material_consumed_kg).
+    raw_material_consumed_kg = models.DecimalField(max_digits=10, decimal_places=3, null=True, blank=True)
+    colorant_consumed_kg = models.DecimalField(max_digits=10, decimal_places=3, null=True, blank=True)
 
     bottles_produced = models.PositiveIntegerField(default=0)
     caps_produced = models.PositiveIntegerField(default=0)
