@@ -15,9 +15,10 @@ COPY requirements /app/requirements
 RUN pip install --no-cache-dir -r /app/requirements/prod.txt
 
 COPY . /app
+RUN chmod +x /app/entrypoint.sh
 
 RUN python manage.py collectstatic --noinput || true
 
 EXPOSE 8000
 
-CMD ["daphne", "-b", "0.0.0.0", "-p", "8000", "config.asgi:application"]
+CMD ["./entrypoint.sh"]
