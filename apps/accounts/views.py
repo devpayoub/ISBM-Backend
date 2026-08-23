@@ -38,10 +38,17 @@ class LogoutView(APIView):
     permission_classes = (IsAuthenticated,)
 
     def post(self, request):
-        try:
-            RefreshToken(request.data.get("refresh"))
-        except Exception:
-            return Response(status=status.HTTP_400_BAD_REQUEST)
+        # Clocking out must never depend on the client's refresh token being
+        # well-formed/still valid — request.user is already proven by the
+        # access token (IsAuthenticated), and that's the only thing
+        # ShiftAssignment.clock_out() needs. Validating `refresh` here is
+        # best-effort bookkeeping only, not a gate.
+        refresh = request.data.get("refresh")
+        if refresh:
+            try:
+                RefreshToken(refresh)
+            except Exception:
+                pass
         log_activity(request.user, "auth.logout", "CustomUser", request.user.pk, request.user.email)
         ShiftAssignment.clock_out(request.user)
         return Response(status=status.HTTP_205_RESET_CONTENT)
