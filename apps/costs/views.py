@@ -83,8 +83,7 @@ class CostRecordViewSet(viewsets.ModelViewSet):
         date_str = request.query_params.get("date") or timezone.now().date()
         rows = self.queryset.filter(date=date_str)
         agg = rows.aggregate(
-            pet=Sum("pet_cost"), energy=Sum("energy_cost"),
-            air=Sum("air_cost"), labor=Sum("labor_cost"), total=Sum("total_cost"),
+            labor=Sum("labor_cost"), total=Sum("total_cost"),
             production=Sum("production_count"),
         )
         return Response({"date": str(date_str), "totals": agg, "rows": CostRecordSerializer(rows, many=True).data})
@@ -95,7 +94,6 @@ class CostRecordViewSet(viewsets.ModelViewSet):
         start = today.replace(day=1)
         rows = self.queryset.filter(date__gte=start, date__lte=today)
         agg = rows.aggregate(
-            pet=Sum("pet_cost"), energy=Sum("energy_cost"), air=Sum("air_cost"),
             labor=Sum("labor_cost"), total=Sum("total_cost"), production=Sum("production_count"),
         )
         per_machine = rows.values("machine__code").annotate(total=Sum("total_cost"), prod=Sum("production_count"))
@@ -110,33 +108,18 @@ class CostRecordViewSet(viewsets.ModelViewSet):
         except ValueError:
             return Response({"detail": "date invalide"}, status=400)
 
-        costs = {
-            "pet": _param("COST_PET_KG"),
-            "energy": _param("COST_ENERGY_KWH"),
-            "air": _param("COST_AIR_M3"),
-            "labor": _param("COST_LABOR_H"),
-        }
+        labor_rate = _param("COST_LABOR_H")
         count = 0
         for m in Machine.objects.filter(is_active=True):
             ents = ProductionEntry.objects.filter(date=date_val, machine=m)
             if not ents.exists():
                 continue
-            agg = ents.aggregate(
-                pet=Sum("pet_kg"), energy=Sum("energy_kwh"), air=Sum("air_m3"),
-                bottles=Sum("bottles_produced"), caps=Sum("caps_produced"),
-            )
+            agg = ents.aggregate(bottles=Sum("bottles_produced"), caps=Sum("caps_produced"))
             prod = (agg["bottles"] or 0) + (agg["caps"] or 0) or 1
-            pet_cost = Decimal(agg["pet"] or 0) * costs["pet"]
-            energy_cost = Decimal(agg["energy"] or 0) * costs["energy"]
-            air_cost = Decimal(agg["air"] or 0) * costs["air"]
-            labor_cost = Decimal(24) * costs["labor"]  # full 24h shift
+            labor_cost = Decimal(24) * labor_rate  # full 24h shift
             rec, _ = CostRecord.objects.update_or_create(
                 machine=m, date=date_val, shift="DAY",
-                defaults={
-                    "pet_cost": pet_cost, "energy_cost": energy_cost,
-                    "air_cost": air_cost, "labor_cost": labor_cost,
-                    "production_count": prod,
-                },
+                defaults={"labor_cost": labor_cost, "production_count": prod},
             )
             rec.compute_totals()
             rec.save()

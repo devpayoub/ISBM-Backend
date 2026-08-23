@@ -148,16 +148,9 @@ class Mold(models.Model):
         return f"{self.name} ({self.reference or 'sans référence'}) — {self.machine.code}"
 
 
-# Default parameters used during seeding & referenced by OEE / costs.
+# Default parameters used during seeding. STEG parameters are seeded
+# separately via migrations/0005_seed_steg_parameters.py, not here.
 DEFAULT_PARAMETERS = [
     # key, label, value, unit, category
-    ("COST_PET_KG", "Coût PET [DA/kg]", 2.80, "DA/kg", "costs"),
-    ("COST_ENERGY_KWH", "Coût énergie [DA/kWh]", 0.75, "DA/kWh", "costs"),
-    ("COST_LABOR_H", "Coût main d'oeuvre [DA/h]", 25.0, "DA/h", "costs"),
-    ("COST_AIR_M3", "Coût air comprimé [DA/m³]", 0.05, "DA/m³", "costs"),
     ("SHIFT_DURATION_MIN", "Durée shift [min]", 1440, "min", "shift"),
-    ("TRS_THRESHOLD", "Seuil TRS [%]", 70.0, "%", "oee"),
-    ("CADENCE_ISBM110", "Cadence ISBM110 [BPH]", 720, "BPH", "machines"),
-    ("CADENCE_ISBM88", "Cadence ISBM88 [BPH]", 1100, "BPH", "machines"),
-    ("CADENCE_CAPS", "Cadence bouchons [CPH]", 1600, "CPH", "machines"),
 ]

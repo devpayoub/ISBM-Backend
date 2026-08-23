@@ -17,6 +17,6 @@ class CostRecordSerializer(serializers.ModelSerializer):
     class Meta:
         model = CostRecord
         fields = ("id", "machine", "machine_code", "date", "shift",
-                  "pet_cost", "energy_cost", "air_cost", "labor_cost", "total_cost",
+                  "labor_cost", "total_cost",
                   "production_count", "cost_per_bottle", "computed_at")
         read_only_fields = ("id", "computed_at", "total_cost", "cost_per_bottle")

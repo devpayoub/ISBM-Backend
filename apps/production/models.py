@@ -60,10 +60,6 @@ class ProductionEntry(models.Model):
     downtime_min = models.PositiveIntegerField(default=0)
     downtime_reason = models.CharField(max_length=200, blank=True, default="")
 
-    pet_kg = models.DecimalField(max_digits=10, decimal_places=3, default=0)
-    energy_kwh = models.DecimalField(max_digits=10, decimal_places=3, default=0)
-    air_m3 = models.DecimalField(max_digits=10, decimal_places=3, default=0)
-
     recorded_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.SET_NULL,
         null=True, blank=True, related_name="production_entries",

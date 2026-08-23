@@ -18,10 +18,6 @@ class OEERecord(models.Model):
     quality_pct = models.DecimalField(max_digits=6, decimal_places=2, default=0)
     trs_pct = models.DecimalField(max_digits=6, decimal_places=2, default=0)
 
-    kwh_per_bottle = models.DecimalField(max_digits=10, decimal_places=4, default=0)
-    air_per_bottle = models.DecimalField(max_digits=10, decimal_places=4, default=0)
-    pet_per_bottle = models.DecimalField(max_digits=10, decimal_places=4, default=0)
-
     reject_count = models.PositiveIntegerField(default=0)
 
     computed_at = models.DateTimeField(auto_now=True)

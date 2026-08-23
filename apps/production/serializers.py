@@ -25,7 +25,6 @@ class ProductionEntrySerializer(serializers.ModelSerializer):
             "planning_order", "planning_order_reference",
             "bottles_produced", "caps_produced", "reject_count", "reject_pct",
             "downtime_min", "downtime_reason",
-            "pet_kg", "energy_kwh", "air_m3",
             "status", "validated_at", "validated_by", "validated_by_name",
             "raw_material_consumed_kg", "colorant_consumed_kg",
             "theoretical_raw_kg", "theoretical_colorant_kg",

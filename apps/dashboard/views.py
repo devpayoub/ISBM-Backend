@@ -31,7 +31,6 @@ class KPIsView(APIView):
             caps=Sum("caps_produced"),
             rejects=Sum("reject_count"),
             downtime=Sum("downtime_min"),
-            pet=Sum("pet_kg"), energy=Sum("energy_kwh"), air=Sum("air_m3"),
         )
 
         # TRS / OEE for the day.
@@ -52,11 +51,6 @@ class KPIsView(APIView):
             total=Sum("total_cost"), prod=Sum("production_count"),
             bottle=Sum("cost_per_bottle"),
         )
-
-        # kWh & air per bottle today.
-        total_prod = (prod_agg["bottles"] or 0) + (prod_agg["caps"] or 0) or 1
-        kwh_per_bottle = round((prod_agg["energy"] or 0) / total_prod, 4)
-        air_per_bottle = round((prod_agg["air"] or 0) / total_prod, 4)
 
         # Pareto counts today.
         pareto = (
@@ -97,8 +91,6 @@ class KPIsView(APIView):
             "critical_active_alerts": critical_active,
             "cost_per_bottle": round(cost_agg["bottle"] or 0, 4),
             "cost_total_today": round(cost_agg["total"] or 0, 2),
-            "kwh_per_bottle": kwh_per_bottle,
-            "air_per_bottle": air_per_bottle,
             "machines_status": mstatus_map,
             "pareto_top5": list(pareto),
             "mttr": mttr_out,

@@ -92,7 +92,6 @@ class OEEViewSet(viewsets.ModelViewSet):
                 caps=Sum("caps_produced"),
                 rejects=Sum("reject_count"),
                 downtime=Sum("downtime_min"),
-                pet=Sum("pet_kg"), energy=Sum("energy_kwh"), air=Sum("air_m3"),
             )
             actual = (agg["bottles"] or 0) + (agg["caps"] or 0)
             nominal = m.nominal_bph or m.nominal_cph or 0
@@ -105,9 +104,6 @@ class OEEViewSet(viewsets.ModelViewSet):
                     "total_downtime_min": agg["downtime"] or 0,
                     "reject_count": agg["rejects"] or 0,
                     "shift_duration_min": int(shift_duration),
-                    "kwh_per_bottle": Decimal(agg["energy"] or 0) / Decimal(actual or 1),
-                    "air_per_bottle": Decimal(agg["air"] or 0) / Decimal(actual or 1),
-                    "pet_per_bottle": Decimal(agg["pet"] or 0) / Decimal(actual or 1),
                 },
             )
             rec.compute()

@@ -130,7 +130,6 @@ class ProductionEntryViewSet(viewsets.ModelViewSet):
             caps=Sum("caps_produced"),
             rejects=Sum("reject_count"),
             downtime=Sum("downtime_min"),
-            pet=Sum("pet_kg"), energy=Sum("energy_kwh"), air=Sum("air_m3"),
         )
         per_machine = defaultdict(int)
         for row in qs.values("machine__code", "bottles_produced", "caps_produced"):
@@ -150,7 +149,6 @@ class ProductionEntryViewSet(viewsets.ModelViewSet):
             row = qs.filter(shift=shift).aggregate(
                 bottles=Sum("bottles_produced"), caps=Sum("caps_produced"),
                 rejects=Sum("reject_count"), downtime=Sum("downtime_min"),
-                pet=Sum("pet_kg"), energy=Sum("energy_kwh"), air=Sum("air_m3"),
             )
             shifts[shift] = row
         return Response({"date": str(date), "shifts": shifts})

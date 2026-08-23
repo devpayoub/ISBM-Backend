@@ -28,9 +28,6 @@ class CostRecord(models.Model):
     date = models.DateField()
     shift = models.CharField(max_length=20, blank=True, default="")
 
-    pet_cost = models.DecimalField(max_digits=12, decimal_places=4, default=0)
-    energy_cost = models.DecimalField(max_digits=12, decimal_places=4, default=0)
-    air_cost = models.DecimalField(max_digits=12, decimal_places=4, default=0)
     labor_cost = models.DecimalField(max_digits=12, decimal_places=4, default=0)
     total_cost = models.DecimalField(max_digits=14, decimal_places=4, default=0)
 
@@ -49,6 +46,6 @@ class CostRecord(models.Model):
         return f"Coût {self.machine.code} {self.date} = {self.total_cost} (/{self.cost_per_bottle}/btl)"
 
     def compute_totals(self) -> None:
-        self.total_cost = sum((self.pet_cost, self.energy_cost, self.air_cost, self.labor_cost))
+        self.total_cost = self.labor_cost
         if self.production_count:
             self.cost_per_bottle = round(self.total_cost / self.production_count, 6)
