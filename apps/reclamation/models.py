@@ -32,6 +32,16 @@ class Reclamation(models.Model):
         null=True, blank=True, related_name="reclamations",
     )
     product_reference = models.CharField(max_length=100, blank=True, default="")
+
+    # Links this complaint straight to the bag that was produced — the bag
+    # already carries machine/production_started_at, so once it's picked
+    # those no longer need to be typed by hand (perform_create/
+    # perform_update in views.py derive `machine`/`production_at` below
+    # from this instead of accepting manual input).
+    package = models.ForeignKey(
+        "package.Package", on_delete=models.SET_NULL,
+        null=True, blank=True, related_name="reclamations",
+    )
     machine = models.ForeignKey(
         "machines.Machine", on_delete=models.SET_NULL,
         null=True, blank=True, related_name="reclamations",

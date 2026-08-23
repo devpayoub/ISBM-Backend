@@ -36,27 +36,34 @@ class ReclamationViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         if self.request.user.role not in MANAGE_ROLES:
             raise PermissionDenied("Rôle insuffisant pour créer une réclamation.")
-        machine = serializer.validated_data.get("machine")
-        production_at = serializer.validated_data.get("production_at")
+        package = serializer.validated_data.get("package")
+        machine = package.machine if package else None
+        production_at = package.production_started_at if package else None
         snapshot = resolve_personnel(machine, production_at) if machine and production_at else {}
-        obj = serializer.save(created_by=self.request.user, resolved_personnel=snapshot)
+        obj = serializer.save(
+            created_by=self.request.user, machine=machine, production_at=production_at,
+            resolved_personnel=snapshot,
+        )
         log_activity(self.request.user, "reclamation.created", "Reclamation", obj.pk, obj.reference)
 
     def perform_update(self, serializer):
         if self.request.user.role not in MANAGE_ROLES:
             raise PermissionDenied("Rôle insuffisant pour modifier une réclamation.")
         instance = self.get_object()
-        new_machine = serializer.validated_data.get("machine", instance.machine)
-        new_production_at = serializer.validated_data.get("production_at", instance.production_at)
-        # Only re-resolve when the lookup inputs actually changed, so an
-        # unrelated edit (severity, description...) doesn't silently
-        # overwrite the historical personnel snapshot.
-        recompute = (
-            ("machine" in serializer.validated_data and serializer.validated_data["machine"] != instance.machine)
-            or ("production_at" in serializer.validated_data and serializer.validated_data["production_at"] != instance.production_at)
+        # Only re-derive machine/production_at/personnel when the package
+        # link actually changed, so an unrelated edit (severity,
+        # description...) doesn't silently overwrite the historical
+        # personnel snapshot.
+        package_changed = (
+            "package" in serializer.validated_data
+            and serializer.validated_data["package"] != instance.package
         )
-        if recompute and new_machine and new_production_at:
-            obj = serializer.save(resolved_personnel=resolve_personnel(new_machine, new_production_at))
+        if package_changed:
+            new_package = serializer.validated_data["package"]
+            machine = new_package.machine if new_package else None
+            production_at = new_package.production_started_at if new_package else None
+            snapshot = resolve_personnel(machine, production_at) if machine and production_at else {}
+            obj = serializer.save(machine=machine, production_at=production_at, resolved_personnel=snapshot)
         else:
             obj = serializer.save()
         log_activity(self.request.user, "reclamation.updated", "Reclamation", obj.pk, obj.reference)
@@ -86,11 +93,24 @@ class ReclamationViewSet(viewsets.ModelViewSet):
         """Live preview for the creation form (plan.md §6: 'When the
         affected date/time and stock/material reference are entered, the
         application should identify the personnel'). Nothing is persisted
-        here — the stored snapshot is computed at actual save time."""
+        here — the stored snapshot is computed at actual save time.
+
+        Preferred usage is `?package=<id>` — the bag already carries its
+        own machine/production_started_at, so no manual machine/date input
+        is needed. `machine`+`when` remain supported directly for callers
+        that don't have a package yet."""
+        package_id = request.query_params.get("package")
+        if package_id:
+            from apps.package.models import Package
+            package = Package.objects.select_related("machine").filter(pk=package_id).first()
+            if package is None:
+                raise ValidationError("Sac introuvable.")
+            return Response(resolve_personnel(package.machine, package.production_started_at))
+
         machine_id = request.query_params.get("machine")
         when_raw = request.query_params.get("when")
         if not when_raw:
-            raise ValidationError("Paramètre 'when' requis (ISO 8601).")
+            raise ValidationError("Paramètre 'package', ou 'when', requis.")
         when = parse_datetime(when_raw)
         if when is None:
             raise ValidationError("Format de date invalide pour 'when' (attendu ISO 8601).")
