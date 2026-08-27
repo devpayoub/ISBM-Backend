@@ -14,10 +14,13 @@ from apps.audit.services import log_activity
 from apps.common.channels_utils import broadcast_to_alerts_group
 from apps.common.permissions import IsAdminOrManagerOrReadOnly
 
-from .models import AuxiliaryEquipment, Machine, MachineComponent, MachineStatus, Mold, Parameter
+from .models import (
+    AuxiliaryEquipment, Machine, MachineComponent, MachineParameter,
+    MachineStatus, Mold, Parameter,
+)
 from .serializers import (
-    AuxiliaryEquipmentSerializer, MachineComponentSerializer, MachineSerializer,
-    MachineStatusSerializer, MoldSerializer, ParameterSerializer,
+    AuxiliaryEquipmentSerializer, MachineComponentSerializer, MachineParameterSerializer,
+    MachineSerializer, MachineStatusSerializer, MoldSerializer, ParameterSerializer,
 )
 
 logger = logging.getLogger(__name__)
@@ -115,6 +118,31 @@ class MachineComponentViewSet(viewsets.ModelViewSet):
         pk = instance.pk
         instance.delete()
         log_activity(self.request.user, "machine_component.deleted", "MachineComponent", pk, detail)
+
+
+@extend_schema(tags=["Machines"])
+class MachineParameterViewSet(viewsets.ModelViewSet):
+    queryset = MachineParameter.objects.select_related("machine", "component", "updated_by")
+    serializer_class = MachineParameterSerializer
+    permission_classes = (IsAuthenticated, IsAdminOrManagerOrReadOnly)
+    filterset_fields = ("machine", "component")
+    search_fields = ("name",)
+
+    def perform_create(self, serializer):
+        obj = serializer.save(updated_by=self.request.user)
+        target = obj.machine.code if obj.machine_id else obj.component.name
+        log_activity(self.request.user, "machine_parameter.created", "MachineParameter", obj.pk, f"{obj.name} — {target}")
+
+    def perform_update(self, serializer):
+        obj = serializer.save(updated_by=self.request.user)
+        target = obj.machine.code if obj.machine_id else obj.component.name
+        log_activity(self.request.user, "machine_parameter.updated", "MachineParameter", obj.pk, f"{obj.name} — {target}")
+
+    def perform_destroy(self, instance):
+        detail = f"{instance.name} — {instance.machine.code if instance.machine_id else instance.component.name}"
+        pk = instance.pk
+        instance.delete()
+        log_activity(self.request.user, "machine_parameter.deleted", "MachineParameter", pk, detail)
 
 
 @extend_schema(tags=["Machines"])

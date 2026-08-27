@@ -1,18 +1,21 @@
 from rest_framework import serializers
 
 from .models import (
-    AuxiliaryEquipment, Machine, MachineComponent, MachineStatus,
-    MachineType, Mold, Parameter,
+    AuxiliaryEquipment, Machine, MachineComponent, MachineParameter,
+    MachineStatus, MachineType, Mold, Parameter,
 )
 
 
 class MachineSerializer(serializers.ModelSerializer):
     andon_status = serializers.SerializerMethodField()
+    equipment_status = serializers.SerializerMethodField()
+    component_count = serializers.SerializerMethodField()
 
     class Meta:
         model = Machine
         fields = (
             "id", "code", "name", "type", "status", "andon_status",
+            "equipment_status", "component_count",
             "nominal_bph", "nominal_cph", "cavities",
             "product_format", "location", "serial_number", "manufacturer", "is_active",
             "created_at", "updated_at",
@@ -22,6 +25,12 @@ class MachineSerializer(serializers.ModelSerializer):
     def get_andon_status(self, obj):
         return obj.get_andon_status()
 
+    def get_equipment_status(self, obj):
+        return obj.get_equipment_status()
+
+    def get_component_count(self, obj):
+        return obj.components.filter(is_active=True).count()
+
 
 class MachineStatusSerializer(serializers.Serializer):
     status = serializers.ChoiceField(choices=MachineStatus.choices)
@@ -29,11 +38,36 @@ class MachineStatusSerializer(serializers.Serializer):
 
 class MachineComponentSerializer(serializers.ModelSerializer):
     machine_code = serializers.CharField(source="machine.code", read_only=True)
+    status = serializers.CharField(read_only=True)
+    parameter_count = serializers.SerializerMethodField()
 
     class Meta:
         model = MachineComponent
-        fields = ("id", "machine", "machine_code", "name", "reference", "is_active", "created_at", "updated_at")
+        fields = (
+            "id", "machine", "machine_code", "name", "reference", "is_active",
+            "status", "parameter_count", "created_at", "updated_at",
+        )
         read_only_fields = ("id", "created_at", "updated_at")
+
+    def get_parameter_count(self, obj):
+        return obj.parameters.count()
+
+
+class MachineParameterSerializer(serializers.ModelSerializer):
+    status = serializers.CharField(read_only=True)
+    updated_by_name = serializers.CharField(source="updated_by.full_name", read_only=True, default="")
+    machine_code = serializers.CharField(source="machine.code", read_only=True, default="")
+    component_name = serializers.CharField(source="component.name", read_only=True, default="")
+
+    class Meta:
+        model = MachineParameter
+        fields = (
+            "id", "machine", "machine_code", "component", "component_name",
+            "name", "unit", "display", "current_value", "target_value",
+            "warning_tolerance_pct", "status", "order",
+            "updated_by", "updated_by_name", "updated_at",
+        )
+        read_only_fields = ("id", "status", "updated_by", "updated_by_name", "updated_at")
 
 
 class AuxiliaryEquipmentSerializer(serializers.ModelSerializer):

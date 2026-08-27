@@ -4,13 +4,14 @@ from apps.common.permissions import IsSupplier
 from rest_framework.permissions import IsAuthenticated
 
 from .views import (
-    AuxiliaryEquipmentViewSet, MachineComponentViewSet, MachineViewSet,
-    MoldViewSet, ParameterViewSet,
+    AuxiliaryEquipmentViewSet, MachineComponentViewSet, MachineParameterViewSet,
+    MachineViewSet, MoldViewSet, ParameterViewSet,
 )
 
 router = DefaultRouter(trailing_slash=False)
 router.register("parameters", ParameterViewSet, basename="parameters")
 router.register("components", MachineComponentViewSet, basename="machine-components")
+router.register("parameter-readings", MachineParameterViewSet, basename="machine-parameters")
 router.register("auxiliary-equipment", AuxiliaryEquipmentViewSet, basename="auxiliary-equipment")
 router.register("molds", MoldViewSet, basename="molds")
 
