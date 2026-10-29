@@ -1,3 +1,5 @@
+name: isbm
+
 services:
   db:
     image: postgres:16-alpine
@@ -95,6 +97,10 @@ services:
       - web
 
 volumes:
+  # Pinned: these were created under the project name `backend`.
   pg_data:
+    name: backend_pg_data
   static_vol:
+    name: backend_static_vol
   media_vol:
+    name: backend_media_vol
